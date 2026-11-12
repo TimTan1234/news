@@ -1,0 +1,14 @@
+services:
+  pulse:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - pulse-data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+volumes:
+  pulse-data:

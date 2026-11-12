@@ -1,0 +1,253 @@
+.post {
+  padding: var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  outline: none;
+  scroll-margin-top: calc(var(--topbar-height) + var(--space-2));
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-3) var(--space-4);
+}
+
+.byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.names {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.sourceName {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topicName,
+.age {
+  font-size: var(--text-sm);
+  color: var(--ink-faint);
+}
+
+.media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.typeTile {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: var(--space-5);
+  background: linear-gradient(var(--tile-angle, 135deg), var(--accent-a), var(--accent-b));
+  color: var(--on-media);
+  font-size: clamp(30px, 9.4vw, 46px);
+  font-stretch: var(--headline-stretch);
+  font-weight: var(--headline-weight);
+  line-height: 0.98;
+  text-align: left;
+  text-wrap: balance;
+}
+
+.typeTile span {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.typeTileCompact {
+  padding: var(--space-3);
+  font-size: var(--text-lg);
+  line-height: 1.02;
+}
+
+.burst {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  fill: var(--on-media);
+  stroke: none;
+  pointer-events: none;
+  animation: burst 700ms ease-out forwards;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.save {
+  margin-left: auto;
+}
+
+.liked svg {
+  fill: var(--like);
+  stroke: var(--like);
+  animation: pop 260ms ease-out;
+}
+
+.saved svg {
+  fill: currentColor;
+}
+
+.summarized {
+  color: var(--accent-ink);
+}
+
+.text {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4) 0;
+}
+
+.headline {
+  font-size: 26px;
+  text-wrap: pretty;
+}
+
+.headline button {
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+
+.read {
+  color: var(--ink-muted);
+}
+
+.excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-muted);
+}
+
+.summary {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+ul.summary li {
+  position: relative;
+  padding-left: var(--space-4);
+}
+
+ul.summary li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-faint);
+}
+
+.summaryLine {
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+}
+
+.skeletonAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLine {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonMedia {
+  margin-bottom: var(--space-4);
+}
+
+@keyframes burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  25% {
+    opacity: 0.95;
+    transform: scale(1.1);
+  }
+  60% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes pop {
+  50% {
+    transform: scale(1.25);
+  }
+}
+
+@media (min-width: 600px) {
+  .head {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .media {
+    border-radius: var(--radius-card);
+  }
+
+  .actions {
+    margin: 0 calc(var(--space-2) * -1);
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .text {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .headline {
+    font-size: 30px;
+  }
+
+  .typeTile {
+    font-size: 52px;
+  }
+
+  .typeTileCompact {
+    font-size: var(--text-2xl);
+  }
+}
