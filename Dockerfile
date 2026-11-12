@@ -1,9 +1,11 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# better-sqlite3 ships prebuilt binaries; skipping install scripts keeps npm from
+# recompiling it, which would need Python and a C++ toolchain in this image.
+RUN npm ci --ignore-scripts
 COPY . .
-RUN npm run build && npm prune --omit=dev
+RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
