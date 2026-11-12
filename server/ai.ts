@@ -2,23 +2,23 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { DB } from './db.ts'
 import { readable } from './reader.ts'
 
-const MODEL = 'claude-opus-5-5'
+const MODEL = 'claude-haiku-5-5'
 
 export class AiError extends Error {}
 
+type Effort = 'low' | 'medium'
+
 let client: Anthropic | undefined
 
-async function ask<T>(system: string, user: string, schema: Record<string, unknown>): Promise<T> {
+async function ask<T>(system: string, user: string, schema: Record<string, unknown>, effort: Effort): Promise<T> {
   client ??= new Anthropic()
   try {
-    const response = await client.beta.messages.create({
+    const response = await client.messages.create({
       model: MODEL,
       max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
       system,
       messages: [{ role: 'user', content: user }],
-      output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+      output_config: { effort, format: { type: 'json_schema', schema } },
     })
     if (response.stop_reason === 'refusal') throw new AiError('The model declined this request.')
     if (response.stop_reason === 'max_tokens') throw new AiError('The response was cut off before it finished.')
@@ -61,6 +61,7 @@ export async function summarize(db: DB, articleId: number): Promise<string[] | n
     SUMMARY_SYSTEM,
     `<article>\n<title>${article.title}</title>\n${text || article.excerpt}\n</article>`,
     SUMMARY_SCHEMA,
+    'low',
   )
   db.prepare('INSERT OR REPLACE INTO summaries (article_id, bullets) VALUES (?, ?)').run(articleId, JSON.stringify(bullets))
   return bullets
@@ -129,7 +130,8 @@ export async function writeBriefing(db: DB, day: string, now = Date.now()): Prom
   if (headlines.length === 0) throw new AiError('No stories from the last 24 hours to brief.')
 
   const lines = headlines.map((h) => `[${h.id}] ${h.topic} | ${h.source} | ${h.title} | ${h.excerpt}`)
-  const briefing = await ask<Briefing>(BRIEFING_SYSTEM, `<headlines>\n${lines.join('\n')}\n</headlines>`, BRIEFING_SCHEMA)
+  // Merging duplicate stories across a few hundred headlines needs more care than a single summary.
+  const briefing = await ask<Briefing>(BRIEFING_SYSTEM, `<headlines>\n${lines.join('\n')}\n</headlines>`, BRIEFING_SCHEMA, 'medium')
 
   const known = new Set(headlines.map((h) => h.id))
   for (const section of briefing.sections) {
