@@ -10,10 +10,11 @@ RUN npm run build && npm prune --omit=dev --ignore-scripts
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
-COPY package.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY server ./server
+# Owned by the runtime user, so the app can read them whatever permissions the host checkout has.
+COPY --chown=node:node package.json ./
+COPY --chown=node:node --from=build /app/node_modules ./node_modules
+COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=node:node server ./server
 RUN mkdir data && chown node:node data
 USER node
 EXPOSE 3000
