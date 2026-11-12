@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../server/app.ts'
 import { hashPassword } from '../server/auth.ts'
 import { openDb, type DB } from '../server/db.ts'
 import { streak } from '../server/routes/insights.ts'
 import { ftsQuery, searchClause } from '../server/routes/articles.ts'
+import { searchTracked } from '../server/search.ts'
 
 let db: DB
 let app: ReturnType<typeof buildApp>
@@ -18,6 +19,12 @@ async function signIn(username: string): Promise<string> {
 
 const call = (method: 'GET' | 'POST' | 'DELETE' | 'PATCH', url: string, cookie: string, payload?: object) =>
   app.inject({ method, url, payload, headers: { cookie } })
+// Tracking a keyword searches the web for it; these tests stay offline.
+vi.mock('../server/search.ts', async (original) => ({
+  ...(await original<typeof import('../server/search.ts')>()),
+  searchTracked: vi.fn(async () => ({ added: [], failed: 0 })),
+}))
+
 const get = async (url: string, cookie = ana) => (await call('GET', url, cookie)).json()
 const post = async (url: string, payload: object = {}, cookie = ana) => (await call('POST', url, cookie, payload)).json()
 
@@ -208,6 +215,19 @@ describe('trackers', () => {
     expect((await get('/api/activity/count')).unseen).toBe(0)
     expect((await call('POST', '/api/trackers', ana, { phrase: 'Transformer' })).statusCode).toBe(409)
     expect((await call('POST', '/api/trackers', ben, { phrase: 'Transformer' })).statusCode).toBe(200)
+  })
+
+  it('counts stories that the web search for a new keyword brought in', async () => {
+    vi.mocked(searchTracked).mockImplementationOnce(async (store, trackers) => {
+      expect(trackers).toEqual([{ user_id: 1, phrase: '鸣潮' }])
+      store.prepare(`INSERT INTO sources (id, user_id, kind, title, site_url, feed_url, followed) VALUES (9, 1, 'results', 'News', 'https://www.bing.com/news', 'search:news', 0)`).run()
+      store
+        .prepare(`INSERT INTO articles (id, user_id, source_id, url, title, excerpt, published_at, fetched_at) VALUES (30, 1, 9, 'https://x.example/web', '《鸣潮》3.8版本上线', '', ?, ?)`)
+        .run(now, now)
+      return { added: [30], failed: 0 }
+    })
+    expect((await post('/api/trackers', { phrase: '鸣潮' })).hits).toBe(1)
+    expect((await get('/api/activity'))[0]).toMatchObject({ tracker: { phrase: '鸣潮' }, article: { id: 30, source: { managed: false } } })
   })
 })
 

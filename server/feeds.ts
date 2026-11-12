@@ -2,7 +2,7 @@ import Parser from 'rss-parser'
 import { decodeHTML } from 'entities'
 import { deleteArticles, type DB } from './db.ts'
 import { attributes, fetchHtml, pool, readText, request } from './http.ts'
-import { parseSearchUrl, searchEntries } from './search.ts'
+import { parseSearchUrl, searchEntries, searchTracked } from './search.ts'
 import { matchNewArticles } from './trackers.ts'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -299,29 +299,36 @@ export interface RefreshResult {
 
 let running: Promise<RefreshResult> | null = null
 
+type Tracked = { user_id: number; phrase: string }
+
 export function refreshAll(db: DB): Promise<RefreshResult> {
-  running ??= refresh(db, followedSources(db)).finally(() => {
+  const trackers = db.prepare('SELECT user_id, phrase FROM trackers').all() as Tracked[]
+  running ??= refresh(db, followedSources(db), trackers).finally(() => {
     running = null
   })
   return running
 }
 
 export function refreshUser(db: DB, userId: number): Promise<RefreshResult> {
-  return refresh(db, followedSources(db, userId))
+  const trackers = db.prepare('SELECT user_id, phrase FROM trackers WHERE user_id = ?').all(userId) as Tracked[]
+  return refresh(db, followedSources(db, userId), trackers)
 }
 
 export function refreshSource(db: DB, userId: number, sourceId: number): Promise<RefreshResult> {
   return refresh(db, followedSources(db, userId).filter((source) => source.id === sourceId))
 }
 
-async function refresh(db: DB, sources: SourceRow[]): Promise<RefreshResult> {
+async function refresh(db: DB, sources: SourceRow[], trackers: Tracked[] = []): Promise<RefreshResult> {
   const now = Date.now()
-  const fetched = await pool(sources, 6, (source) => fetchSource(source, now))
+  const [fetched, tracked] = await Promise.all([
+    pool(sources, 6, (source) => fetchSource(source, now)),
+    searchTracked(db, trackers, now),
+  ])
   const succeed = db.prepare('UPDATE sources SET etag = ?, last_modified = ?, fetched_at = ?, error = NULL WHERE id = ?')
   const touch = db.prepare('UPDATE sources SET fetched_at = ?, error = NULL WHERE id = ?')
   const fail = db.prepare('UPDATE sources SET fetched_at = ?, error = ? WHERE id = ?')
-  const added: number[] = []
-  let failed = 0
+  const added = tracked.added
+  let failed = tracked.failed
   sources.forEach((source, index) => {
     const result = fetched[index]
     if ('error' in result) {

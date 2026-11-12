@@ -72,6 +72,7 @@ export function TrackerChips() {
 
 export function Activity() {
   const { data: hits, isPending } = useActivity()
+  const { data: trackers } = useTrackers()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const t = useMessages()
 
@@ -105,7 +106,11 @@ export function Activity() {
         <TrackerChips />
       </div>
       {isPending ? null : ordered.length === 0 ? (
-        <Empty title={t.activity.emptyTitle}>{t.activity.emptyBody}</Empty>
+        trackers?.length ? (
+          <Empty title={t.activity.noMatchesTitle}>{t.activity.noMatchesBody}</Empty>
+        ) : (
+          <Empty title={t.activity.emptyTitle}>{t.activity.emptyBody}</Empty>
+        )
       ) : (
         ordered.map(([id, group]) => {
           const shown = expanded.has(id) ? group.hits : group.hits.slice(0, PER_KEYWORD)

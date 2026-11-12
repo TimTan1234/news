@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { api, errorText } from '../api/client.ts'
@@ -9,6 +9,7 @@ import { Wordmark } from '../components/Shell.tsx'
 import { StoriesRail } from '../components/Stories.tsx'
 import { Avatar, Empty, TopBar, cx, ui } from '../components/ui.tsx'
 import { useMessages } from '../i18n/index.ts'
+import { useSideScroll } from '../lib/dom.ts'
 import { sessionStore } from '../state/session.ts'
 import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
@@ -19,6 +20,8 @@ export function Home() {
   const { data: topics } = useTopics()
   const refresh = useRefresh()
   const t = useMessages()
+  const [chips, setChips] = useState<HTMLDivElement | null>(null)
+  useSideScroll(chips)
 
   // A new account has sources but no stories; its first visit fetches them.
   useEffect(() => {
@@ -50,7 +53,7 @@ export function Home() {
         </button>
       </TopBar>
       <StoriesRail />
-      <div className={p.chips} role="tablist" aria-label={t.home.topics}>
+      <div className={p.chips} ref={setChips} role="tablist" aria-label={t.home.topics}>
         <button className={cx(ui.chip, !topic && ui.chipActive)} role="tab" aria-selected={!topic} onClick={() => choose()}>
           {t.home.forYou}
         </button>

@@ -27,7 +27,7 @@ describe('bilibili search', () => {
     )
     expect(entry).toEqual({
       url: 'https://www.bilibili.com/video/BV1jVWd6LEqN',
-      title: '鸣潮 3.8 前瞻 & 抽卡',
+      title: '鸣潮3.8 前瞻 & 抽卡',
       excerpt: '左右同屏双开',
       image: 'https://i0.hdslb.com/bfs/archive/cover.jpg',
       author: '栗悟饭',

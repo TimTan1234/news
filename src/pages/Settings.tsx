@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Download, LogOut, Moon, Sun, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api, errorText, type Source, type Topic } from '../api/client.ts'
-import { invalidate, useSources, useTopics } from '../api/hooks.ts'
+import { invalidate, useProviders, useSources, useTopics } from '../api/hooks.ts'
 import { Avatar, TopBar, cx, ui } from '../components/ui.tsx'
 import { setLang, useLang, useMessages, type Lang } from '../i18n/index.ts'
 import { sessionStore, signOut } from '../state/session.ts'
@@ -16,6 +16,8 @@ const LANGUAGES: [Lang, string][] = [
   ['en', 'English'],
   ['zh', '简体中文'],
 ]
+
+const FEED = 'feed'
 
 const refreshLibrary = () => invalidate('sources', 'topics', 'feed', 'stories', 'trending')
 
@@ -65,17 +67,21 @@ function SourceRow({ source }: { source: Source }) {
 
 function AddSource({ topics }: { topics: Topic[] }) {
   const [url, setUrl] = useState('')
+  const [kind, setKind] = useState(FEED)
   const [topicId, setTopicId] = useState<number | ''>('')
   const [busy, setBusy] = useState(false)
+  const { data: providers } = useProviders()
   const t = useMessages()
   const chosen = topicId || topics[0]?.id
+  const isFeed = kind === FEED
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     let added: Source | undefined
     const ok = await attempt(async () => {
-      added = await api<Source>('/api/sources', { body: { url, topicId: chosen } })
+      const what = isFeed ? { url } : { search: { provider: kind, query: url } }
+      added = await api<Source>('/api/sources', { body: { ...what, topicId: chosen } })
     })
     if (ok && added) {
       toast(t.settings.followingSource(added.title))
@@ -87,14 +93,22 @@ function AddSource({ topics }: { topics: Topic[] }) {
   return (
     <div className={p.field}>
       <form className={p.inlineForm} onSubmit={submit}>
+        <select className={cx(ui.input, p.select)} value={kind} onChange={(event) => setKind(event.target.value)} aria-label={t.settings.kind}>
+          <option value={FEED}>{t.settings.kindFeed}</option>
+          {providers?.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {t.settings.searchOn(t.explore.providers[provider.id] ?? provider.name)}
+            </option>
+          ))}
+        </select>
         <input
           className={ui.input}
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          placeholder={t.settings.addressPlaceholder}
-          aria-label={t.settings.addressPlaceholder}
+          placeholder={isFeed ? t.settings.addressPlaceholder : t.settings.keywordPlaceholder}
+          aria-label={isFeed ? t.settings.addressPlaceholder : t.settings.keywordPlaceholder}
           aria-describedby="address-hint"
-          inputMode="url"
+          inputMode={isFeed ? 'url' : 'text'}
         />
         <select className={cx(ui.input, p.select)} value={chosen ?? ''} onChange={(event) => setTopicId(Number(event.target.value))} aria-label={t.settings.topic}>
           {topics.map((topic) => (
@@ -104,10 +118,10 @@ function AddSource({ topics }: { topics: Topic[] }) {
           ))}
         </select>
         <button className={cx(ui.button, ui.primary)} disabled={busy || !url.trim() || !chosen}>
-          {busy ? t.settings.finding : t.settings.addSource}
+          {busy && isFeed ? t.settings.finding : t.settings.addSource}
         </button>
       </form>
-      <small id="address-hint">{t.settings.addressHint}</small>
+      <small id="address-hint">{isFeed ? t.settings.addressHint : t.settings.searchHint}</small>
     </div>
   )
 }

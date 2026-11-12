@@ -4,7 +4,7 @@ import { discover } from '../discover.ts'
 import { Failure } from '../errors.ts'
 import { refreshSource, refreshUser } from '../feeds.ts'
 import { exportOpml, parseOpml } from '../opml.ts'
-import { availableProviders, followedSearch, searchAndStore } from '../search.ts'
+import { availableProviders, followedSearch, searchAndStore, searchTracked } from '../search.ts'
 import { matchNewTracker } from '../trackers.ts'
 
 const SOURCE_SELECT = `
@@ -144,7 +144,7 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
       .all(req.userId),
   )
 
-  app.post<{ Body: { phrase?: string } }>('/api/trackers', (req) => {
+  app.post<{ Body: { phrase?: string } }>('/api/trackers', async (req) => {
     const phrase = req.body?.phrase?.trim().replace(/\s+/g, ' ')
     if (!phrase) throw new Failure(400, 'keyword_required', 'Keyword is required')
     if (db.prepare('SELECT 1 FROM trackers WHERE user_id = ? AND phrase = ?').get(req.userId, phrase)) {
@@ -153,6 +153,7 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
     const id = Number(
       db.prepare('INSERT INTO trackers (user_id, phrase, created_at) VALUES (?, ?, ?)').run(req.userId, phrase, Date.now()).lastInsertRowid,
     )
+    await searchTracked(db, [{ user_id: req.userId, phrase }])
     return { id, hits: matchNewTracker(db, id) }
   })
 

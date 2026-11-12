@@ -1,7 +1,8 @@
 import { ARTICLE_SELECT, toArticle, type Article, type ArticleRow, type DB } from './db.ts'
 import { Failure } from './errors.ts'
 import { ingest, makeExcerpt, parseFeed, toEntry, type Entry } from './feeds.ts'
-import { readText, request } from './http.ts'
+import { pool, readText, request } from './http.ts'
+import { matchNewArticles } from './trackers.ts'
 
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
@@ -55,7 +56,8 @@ export interface BilibiliVideo {
 }
 
 export function bilibiliEntry(video: BilibiliVideo, now: number): Entry | null {
-  const title = makeExcerpt({ contentSnippet: video.title })
+  // The API wraps the matched words in <em>; dropping the tags first keeps the title's own spacing.
+  const title = makeExcerpt({ contentSnippet: video.title?.replace(/<\/?em\b[^>]*>/g, '') })
   if (!video.bvid || !title) return null
   return {
     url: `https://www.bilibili.com/video/${video.bvid}`,
@@ -162,10 +164,33 @@ export async function searchAndStore(db: DB, userId: number, providerId: string,
   } catch (error) {
     throw new Failure(502, 'search_failed', `${found.name} search failed: ${error instanceof Error ? error.message : String(error)}`)
   }
-  ingest(db, { id: resultsBucket(db, userId, found), user_id: userId }, entries, now)
+  matchNewArticles(db, ingest(db, { id: resultsBucket(db, userId, found), user_id: userId }, entries, now), now)
   const byUrl = db.prepare(`${ARTICLE_SELECT} WHERE a.user_id = ? AND a.url = ?`)
   return entries.flatMap((entry) => {
     const row = byUrl.get(userId, entry.url) as ArticleRow | undefined
     return row ? [toArticle(row)] : []
   })
+}
+
+/**
+ * Runs every available search for each tracked phrase and stores what comes back, so a keyword
+ * reaches stories that none of the account's own sources carry. Returns the ids of the new articles.
+ */
+export async function searchTracked(
+  db: DB,
+  trackers: { user_id: number; phrase: string }[],
+  now = Date.now(),
+): Promise<{ added: number[]; failed: number }> {
+  const jobs = trackers.flatMap((tracker) => PROVIDERS.filter((found) => found.available()).map((found) => ({ tracker, found })))
+  let failed = 0
+  const added = await pool(jobs, 4, async ({ tracker, found }) => {
+    try {
+      const entries = await found.search(tracker.phrase, now)
+      return ingest(db, { id: resultsBucket(db, tracker.user_id, found), user_id: tracker.user_id }, entries, now)
+    } catch {
+      failed++
+      return []
+    }
+  })
+  return { added: added.flat(), failed }
 }

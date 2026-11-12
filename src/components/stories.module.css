@@ -11,6 +11,55 @@
   display: none;
 }
 
+.rail img {
+  -webkit-user-drag: none;
+}
+
+.railFrame {
+  position: relative;
+}
+
+/* Arrows for pointers that cannot swipe; they sit level with the rings. */
+.railStep {
+  position: absolute;
+  top: var(--space-3);
+  display: none;
+  place-items: center;
+  width: 48px;
+  height: 70px;
+}
+
+.railStep span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+}
+
+.railStep:active span {
+  background: var(--hairline);
+}
+
+.railBack {
+  left: 0;
+  justify-items: start;
+  background: linear-gradient(to right, var(--canvas) 50%, transparent);
+}
+
+.railOn {
+  right: 0;
+  justify-items: end;
+  background: linear-gradient(to left, var(--canvas) 50%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .railStep {
+    display: grid;
+  }
+}
+
 .story {
   display: grid;
   justify-items: center;

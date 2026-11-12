@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import type { Article, Story } from '../api/client.ts'
 import { useStories } from '../api/hooks.ts'
 import { useMessages } from '../i18n/index.ts'
-import { useKey, useScrollLock } from '../lib/dom.ts'
+import { useKey, useScrollLock, useSideScroll } from '../lib/dom.ts'
 import { ago } from '../lib/format.ts'
 import { useOverlay } from '../lib/overlay.ts'
 import { markSeen, setLiked, setSaved, useFlagChanges, useFlags, withFlags } from '../state/flags.ts'
@@ -18,6 +18,8 @@ export function StoriesRail() {
   const { data, isPending } = useStories()
   const overlay = useOverlay()
   const t = useMessages()
+  const [strip, setStrip] = useState<HTMLUListElement | null>(null)
+  const { more, step } = useSideScroll(strip, data?.length)
   useFlagChanges()
 
   if (isPending) {
@@ -32,25 +34,41 @@ export function StoriesRail() {
   if (!data?.length) return null
 
   return (
-    <ul className={s.rail} aria-label={t.stories.label}>
-      {data.map((story) => (
-        <li key={story.source.id}>
-          <button
-            className={s.story}
-            onClick={() => overlay.open('story', story.source.id)}
-            aria-label={t.stories.unread(story.source.title, unread(story))}
-          >
-            <Avatar
-              title={story.source.title}
-              icon={story.source.icon}
-              size={56}
-              ring={story.items.map((item) => !withFlags(item).seen)}
-            />
-            <span className={cx(s.storyName, unread(story) > 0 && s.storyNew)}>{story.source.title}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className={s.railFrame}>
+      <ul className={s.rail} ref={setStrip} aria-label={t.stories.label}>
+        {data.map((story) => (
+          <li key={story.source.id}>
+            <button
+              className={s.story}
+              onClick={() => overlay.open('story', story.source.id)}
+              aria-label={t.stories.unread(story.source.title, unread(story))}
+            >
+              <Avatar
+                title={story.source.title}
+                icon={story.source.icon}
+                size={56}
+                ring={story.items.map((item) => !withFlags(item).seen)}
+              />
+              <span className={cx(s.storyName, unread(story) > 0 && s.storyNew)}>{story.source.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {more.back && (
+        <button className={cx(s.railStep, s.railBack)} onClick={() => step(-1)} aria-label={t.stories.scrollBack}>
+          <span>
+            <ChevronLeft size={20} />
+          </span>
+        </button>
+      )}
+      {more.on && (
+        <button className={cx(s.railStep, s.railOn)} onClick={() => step(1)} aria-label={t.stories.scrollOn}>
+          <span>
+            <ChevronRight size={20} />
+          </span>
+        </button>
+      )}
+    </div>
   )
 }
 

@@ -36,7 +36,7 @@ A database from before accounts existed is kept beside the new one as `pulse-bef
 - **Reader**: the article text extracted in place, with a link to the original.
 - **Explore**: search your feed, or carry the same search on to the news, Bilibili and Weibo. Any outside search can be followed, which adds its new results to your feed.
 - **Briefing**: a daily digest of the last 24 hours, written by Claude.
-- **Activity**: keywords you track, with every story that mentions them.
+- **Activity**: keywords you track, with every story that mentions them, whether it came from your sources or from a news, Bilibili or Weibo search for the keyword.
 - **Profile**: reading streak, weekly and per-topic counts, saved and liked stories.
 - **Settings**: theme, language, sources, topics, OPML import and export, and signing out.
 

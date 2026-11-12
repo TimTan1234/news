@@ -7,6 +7,7 @@ import { TileGrid } from '../components/Feed.tsx'
 import { ArticleRow } from '../components/Row.tsx'
 import { Empty, cx, ui } from '../components/ui.tsx'
 import { useMessages } from '../i18n/index.ts'
+import { useSideScroll } from '../lib/dom.ts'
 import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
 
@@ -22,10 +23,12 @@ export function Explore() {
   const { data: providers } = useProviders()
   const local = useFeed({ q }, { limit: 30, enabled: Boolean(q) })
   const t = useMessages()
+  const [chips, setChips] = useState<HTMLDivElement | null>(null)
+  useSideScroll(chips)
 
   // A search that finds nothing in the feed carries straight on to the news, unless a place to look was chosen.
   const localEmpty = local.isSuccess && local.data.pages[0].items.length === 0
-  const scope = search.get('in') ?? (localEmpty && providers?.length ? providers[0].id : FEED)
+  const scope = search.get('in') ?? (q && localEmpty && providers?.length ? providers[0].id : FEED)
 
   const update = (change: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(search)
@@ -35,7 +38,6 @@ export function Explore() {
 
   const apply = (value: string) =>
     update((next) => {
-      next.delete('in')
       if (value.trim()) next.set('q', value.trim())
       else next.delete('q')
     })
@@ -80,34 +82,36 @@ export function Explore() {
         </label>
       </div>
 
-      {q ? (
-        <div className={p.chips} role="tablist">
-          {[{ id: FEED, name: t.explore.yourFeed }, ...(providers ?? [])].map((item) => (
-            <button
-              key={item.id}
-              role="tab"
-              aria-selected={scope === item.id}
-              className={cx(ui.chip, scope === item.id && ui.chipActive)}
-              onClick={() => update((next) => next.set('in', item.id))}
-            >
-              {item.id === FEED ? item.name : label(item.id, item.name)}
+      <div className={p.scopes} role="tablist">
+        {[{ id: FEED, name: t.explore.yourFeed }, ...(providers ?? [])].map((item) => (
+          <button
+            key={item.id}
+            role="tab"
+            aria-selected={scope === item.id}
+            className={cx(p.scope, scope === item.id && p.scopeOn)}
+            onClick={() => update((next) => next.set('in', item.id))}
+          >
+            {item.id === FEED ? item.name : label(item.id, item.name)}
+          </button>
+        ))}
+      </div>
+
+      {!q && !provider && !!trends?.length && (
+        <div className={p.chips} ref={setChips} aria-label={t.explore.trending}>
+          {trends.map((trend) => (
+            <button key={trend.phrase} className={ui.chip} onClick={() => pick(trend.phrase)}>
+              {trend.phrase}
             </button>
           ))}
         </div>
-      ) : (
-        !!trends?.length && (
-          <div className={p.chips} aria-label={t.explore.trending}>
-            {trends.map((trend) => (
-              <button key={trend.phrase} className={ui.chip} onClick={() => pick(trend.phrase)}>
-                {trend.phrase}
-              </button>
-            ))}
-          </div>
-        )
       )}
 
-      {q && provider ? (
-        <WebResults key={`${provider.id}:${q}`} provider={provider.id} name={label(provider.id, provider.name)} query={q} />
+      {provider ? (
+        q ? (
+          <WebResults key={`${provider.id}:${q}`} provider={provider.id} name={label(provider.id, provider.name)} query={q} />
+        ) : (
+          <Empty title={t.explore.prompt(label(provider.id, provider.name))} />
+        )
       ) : (
         <TileGrid params={q ? { q } : {}} empty={<Empty title={q ? t.explore.noMatch(q) : t.explore.empty} />} />
       )}
