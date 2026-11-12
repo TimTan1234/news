@@ -106,45 +106,63 @@ describe('ingest', () => {
   function setup() {
     const db = openDb(':memory:')
     db.exec(`
-      INSERT INTO topics (id, name, slug, position) VALUES (1, 'AI', 'ai', 0), (2, 'Tech', 'tech', 1);
-      INSERT INTO sources (id, topic_id, title, site_url, feed_url) VALUES
-        (1, 1, 'Site AI', 'https://site.example/ai', 'https://site.example/ai/feed'),
-        (2, 2, 'Site', 'https://site.example', 'https://site.example/feed');
+      INSERT INTO users (id, username, password, created_at) VALUES (1, 'ana', 'x', 0), (2, 'ben', 'x', 0);
+      INSERT INTO topics (id, user_id, name, slug, position) VALUES (1, 1, 'AI', 'ai', 0), (2, 1, 'Tech', 'tech', 1), (3, 2, 'Tech', 'tech', 0);
+      INSERT INTO sources (id, user_id, topic_id, title, site_url, feed_url) VALUES
+        (1, 1, 1, 'Site AI', 'https://site.example/ai', 'https://site.example/ai/feed'),
+        (2, 1, 2, 'Site', 'https://site.example', 'https://site.example/feed'),
+        (3, 2, 3, 'Site', 'https://site.example', 'https://site.example/feed');
     `)
     return db
   }
+  const narrow = { id: 1, user_id: 1 }
+  const general = { id: 2, user_id: 1 }
+  const other = { id: 3, user_id: 2 }
   const entry = (url: string, publishedAt = NOW): Entry => ({ url, title: 'Story', excerpt: '', image: null, author: null, publishedAt })
   const owner = (db: ReturnType<typeof setup>, url: string) =>
     db.prepare('SELECT source_id FROM articles WHERE url = ?').pluck().get(url)
 
   it('stores a story once when two feeds carry it, under the narrower topic', () => {
     const db = setup()
-    expect(ingest(db, 1, [entry('https://site.example/story')], NOW)).toHaveLength(1)
-    expect(ingest(db, 2, [entry('https://site.example/story')], NOW)).toHaveLength(0)
+    expect(ingest(db, narrow, [entry('https://site.example/story')], NOW)).toHaveLength(1)
+    expect(ingest(db, general, [entry('https://site.example/story')], NOW)).toHaveLength(0)
     expect(db.prepare('SELECT COUNT(*) FROM articles').pluck().get()).toBe(1)
     expect(owner(db, 'https://site.example/story')).toBe(1)
   })
 
   it('moves a story to the narrower topic when the general feed published it first', () => {
     const db = setup()
-    ingest(db, 2, [entry('https://site.example/story')], NOW)
-    ingest(db, 1, [entry('https://site.example/story')], NOW)
+    ingest(db, general, [entry('https://site.example/story')], NOW)
+    ingest(db, narrow, [entry('https://site.example/story')], NOW)
     expect(owner(db, 'https://site.example/story')).toBe(1)
+  })
+
+  it('keeps a separate copy of the same story for each account', () => {
+    const db = setup()
+    expect(ingest(db, general, [entry('https://site.example/story')], NOW)).toHaveLength(1)
+    expect(ingest(db, other, [entry('https://site.example/story')], NOW)).toHaveLength(1)
+    expect(db.prepare('SELECT user_id FROM articles ORDER BY id').pluck().all()).toEqual([1, 2])
+  })
+
+  it('records the outlet behind a search result', () => {
+    const db = setup()
+    ingest(db, general, [{ ...entry('https://outlet.example/a'), publisher: 'Outlet' }], NOW)
+    expect(db.prepare('SELECT publisher FROM articles').pluck().get()).toBe('Outlet')
   })
 
   it('moves a story off an unfollowed source', () => {
     const db = setup()
-    ingest(db, 1, [entry('https://site.example/story')], NOW)
+    ingest(db, narrow, [entry('https://site.example/story')], NOW)
     db.prepare('UPDATE sources SET followed = 0 WHERE id = 1').run()
-    ingest(db, 2, [entry('https://site.example/story')], NOW)
+    ingest(db, general, [entry('https://site.example/story')], NOW)
     expect(owner(db, 'https://site.example/story')).toBe(2)
   })
 
   it('prunes expired articles but keeps saved, liked and read ones', () => {
     const db = setup()
     const expired = NOW - RETENTION - 1000
-    ingest(db, 1, ['plain', 'saved', 'liked', 'read'].map((name) => entry(`https://site.example/${name}`, expired)), expired)
-    ingest(db, 1, [entry('https://site.example/fresh')], NOW)
+    ingest(db, narrow, ['plain', 'saved', 'liked', 'read'].map((name) => entry(`https://site.example/${name}`, expired)), expired)
+    ingest(db, narrow, [entry('https://site.example/fresh')], NOW)
     db.prepare(`UPDATE articles SET saved_at = 1 WHERE url LIKE '%/saved'`).run()
     db.prepare(`UPDATE articles SET liked_at = 1 WHERE url LIKE '%/liked'`).run()
     db.prepare(`UPDATE articles SET read_at = 1 WHERE url LIKE '%/read'`).run()
@@ -171,10 +189,14 @@ describe('opml', () => {
   it('round-trips topics and sources', () => {
     const db = openDb(':memory:')
     db.exec(`
-      INSERT INTO topics (id, name, slug, position) VALUES (1, 'AI & ML', 'ai-ml', 0);
-      INSERT INTO sources (topic_id, title, site_url, feed_url) VALUES (1, 'Q&A "Daily"', 'https://qa.example', 'https://qa.example/feed?a=1&b=2');
+      INSERT INTO users (id, username, password, created_at) VALUES (1, 'ana', 'x', 0), (2, 'ben', 'x', 0);
+      INSERT INTO topics (id, user_id, name, slug, position) VALUES (1, 1, 'AI & ML', 'ai-ml', 0), (2, 2, 'Other', 'other', 0);
+      INSERT INTO sources (user_id, topic_id, title, site_url, feed_url) VALUES
+        (1, 1, 'Q&A "Daily"', 'https://qa.example', 'https://qa.example/feed?a=1&b=2'),
+        (1, 1, 'Followed search', 'https://www.bing.com/news', 'search:news:kirby'),
+        (2, 2, 'Not mine', 'https://other.example', 'https://other.example/feed');
     `)
-    expect(parseOpml(exportOpml(db))).toEqual([
+    expect(parseOpml(exportOpml(db, 1))).toEqual([
       { topic: 'AI & ML', title: 'Q&A "Daily"', siteUrl: 'https://qa.example', feedUrl: 'https://qa.example/feed?a=1&b=2' },
     ])
   })

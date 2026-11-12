@@ -1,12 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { DB } from './db.ts'
+import { Failure } from './errors.ts'
 import { readable } from './reader.ts'
 
 const MODEL = 'claude-haiku-5-5'
 
-export class AiError extends Error {}
+export class AiError extends Failure {
+  constructor(code: string, message: string) {
+    super(502, code, message)
+  }
+}
 
 type Effort = 'low' | 'medium'
+export type Lang = 'en' | 'zh'
+
+const writeIn = (lang: Lang) => `Write in ${lang === 'zh' ? 'Simplified Chinese' : 'English'}, whatever language the source is in.`
 
 let client: Anthropic | undefined
 
@@ -20,19 +28,19 @@ async function ask<T>(system: string, user: string, schema: Record<string, unkno
       messages: [{ role: 'user', content: user }],
       output_config: { effort, format: { type: 'json_schema', schema } },
     })
-    if (response.stop_reason === 'refusal') throw new AiError('The model declined this request.')
-    if (response.stop_reason === 'max_tokens') throw new AiError('The response was cut off before it finished.')
+    if (response.stop_reason === 'refusal') throw new AiError('ai_refused', 'The model declined this request.')
+    if (response.stop_reason === 'max_tokens') throw new AiError('ai_cut_off', 'The response was cut off before it finished.')
     const text = response.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
     return JSON.parse(text) as T
   } catch (error) {
     if (error instanceof AiError) throw error
-    if (error instanceof Anthropic.AuthenticationError) throw new AiError('The Anthropic API key was rejected.')
-    if (error instanceof Anthropic.RateLimitError) throw new AiError('The Anthropic API is rate limiting requests. Try again shortly.')
-    if (error instanceof Anthropic.APIConnectionError) throw new AiError('Could not reach the Anthropic API.')
-    if (error instanceof Anthropic.APIError) throw new AiError(`Anthropic API error ${error.status}: ${error.message}`)
+    if (error instanceof Anthropic.AuthenticationError) throw new AiError('ai_key_rejected', 'The Anthropic API key was rejected.')
+    if (error instanceof Anthropic.RateLimitError) throw new AiError('ai_rate_limited', 'The Anthropic API is rate limiting requests. Try again shortly.')
+    if (error instanceof Anthropic.APIConnectionError) throw new AiError('ai_unreachable', 'Could not reach the Anthropic API.')
+    if (error instanceof Anthropic.APIError) throw new AiError('ai_error', `Anthropic API error ${error.status}: ${error.message}`)
     // With no credentials the SDK fails before sending anything, with a plain Error.
     if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-      throw new AiError('Add ANTHROPIC_API_KEY to .env and restart to use summaries and the briefing.')
+      throw new AiError('ai_no_key', 'Add ANTHROPIC_API_KEY to .env and restart to use summaries and the briefing.')
     }
     throw error
   }
@@ -49,21 +57,23 @@ const SUMMARY_SCHEMA = {
   additionalProperties: false,
 }
 
-export async function summarize(db: DB, articleId: number): Promise<string[] | null> {
-  const cached = db.prepare('SELECT bullets FROM summaries WHERE article_id = ?').pluck().get(articleId) as string | undefined
-  if (cached) return JSON.parse(cached) as string[]
-  const article = db.prepare('SELECT url, title, excerpt FROM articles WHERE id = ?').get(articleId) as
+export async function summarize(db: DB, userId: number, articleId: number, lang: Lang): Promise<string[] | null> {
+  const article = db.prepare('SELECT url, title, excerpt FROM articles WHERE id = ? AND user_id = ?').get(articleId, userId) as
     | { url: string; title: string; excerpt: string }
     | undefined
   if (!article) return null
+  const cached = db.prepare('SELECT bullets FROM summaries WHERE article_id = ? AND lang = ?').pluck().get(articleId, lang) as
+    | string
+    | undefined
+  if (cached) return JSON.parse(cached) as string[]
   const { text } = await readable(db, articleId, article.url)
   const { bullets } = await ask<{ bullets: string[] }>(
-    SUMMARY_SYSTEM,
+    `${SUMMARY_SYSTEM}\n${writeIn(lang)}`,
     `<article>\n<title>${article.title}</title>\n${text || article.excerpt}\n</article>`,
     SUMMARY_SCHEMA,
     'low',
   )
-  db.prepare('INSERT OR REPLACE INTO summaries (article_id, bullets) VALUES (?, ?)').run(articleId, JSON.stringify(bullets))
+  db.prepare('INSERT OR REPLACE INTO summaries (article_id, lang, bullets) VALUES (?, ?, ?)').run(articleId, lang, JSON.stringify(bullets))
   return bullets
 }
 
@@ -111,32 +121,40 @@ export interface Briefing {
   sections: { topic: string; stories: { title: string; summary: string; articleIds: number[] }[] }[]
 }
 
-export function storedBriefing(db: DB, day: string): { briefing: Briefing; createdAt: number } | null {
-  const row = db.prepare('SELECT body, created_at FROM briefings WHERE day = ?').get(day) as
+export function storedBriefing(db: DB, userId: number, day: string, lang: Lang): { briefing: Briefing; createdAt: number } | null {
+  const row = db.prepare('SELECT body, created_at FROM briefings WHERE user_id = ? AND day = ? AND lang = ?').get(userId, day, lang) as
     | { body: string; created_at: number }
     | undefined
   return row ? { briefing: JSON.parse(row.body) as Briefing, createdAt: row.created_at } : null
 }
 
-export async function writeBriefing(db: DB, day: string, now = Date.now()): Promise<{ briefing: Briefing; createdAt: number }> {
+export async function writeBriefing(
+  db: DB,
+  userId: number,
+  day: string,
+  lang: Lang,
+  now = Date.now(),
+): Promise<{ briefing: Briefing; createdAt: number }> {
   const headlines = db
     .prepare(
       `SELECT a.id, a.title, a.excerpt, s.title AS source, t.name AS topic
        FROM articles a JOIN sources s ON s.id = a.source_id JOIN topics t ON t.id = s.topic_id
-       WHERE s.followed = 1 AND a.hidden_at IS NULL AND a.published_at >= ?
+       WHERE a.user_id = ? AND s.followed = 1 AND a.hidden_at IS NULL AND a.published_at >= ?
        ORDER BY t.position, a.published_at DESC`,
     )
-    .all(now - 24 * 60 * 60 * 1000) as { id: number; title: string; excerpt: string; source: string; topic: string }[]
-  if (headlines.length === 0) throw new AiError('No stories from the last 24 hours to brief.')
+    .all(userId, now - 24 * 60 * 60 * 1000) as { id: number; title: string; excerpt: string; source: string; topic: string }[]
+  if (headlines.length === 0) throw new AiError('ai_no_stories', 'No stories from the last 24 hours to brief.')
 
   const lines = headlines.map((h) => `[${h.id}] ${h.topic} | ${h.source} | ${h.title} | ${h.excerpt}`)
   // Merging duplicate stories across a few hundred headlines needs more care than a single summary.
-  const briefing = await ask<Briefing>(BRIEFING_SYSTEM, `<headlines>\n${lines.join('\n')}\n</headlines>`, BRIEFING_SCHEMA, 'medium')
+  const briefing = await ask<Briefing>(`${BRIEFING_SYSTEM}\n${writeIn(lang)}`, `<headlines>\n${lines.join('\n')}\n</headlines>`, BRIEFING_SCHEMA, 'medium')
 
   const known = new Set(headlines.map((h) => h.id))
   for (const section of briefing.sections) {
     for (const story of section.stories) story.articleIds = story.articleIds.filter((id) => known.has(id))
   }
-  db.prepare('INSERT OR REPLACE INTO briefings (day, body, created_at) VALUES (?, ?, ?)').run(day, JSON.stringify(briefing), now)
+  db.prepare('INSERT OR REPLACE INTO briefings (user_id, day, lang, body, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    userId, day, lang, JSON.stringify(briefing), now,
+  )
   return { briefing, createdAt: now }
 }

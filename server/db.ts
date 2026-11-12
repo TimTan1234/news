@@ -1,47 +1,70 @@
+import { renameSync } from 'node:fs'
 import Database from 'better-sqlite3'
 
 export type DB = Database.Database
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS topics (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
-  position INTEGER NOT NULL DEFAULT 0
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS topics (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (user_id, slug)
+);
+
+-- kind 'feed' is a source the user manages; 'results' is the hidden bucket that holds one-off search results.
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY,
-  topic_id INTEGER NOT NULL REFERENCES topics(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  topic_id INTEGER REFERENCES topics(id),
+  kind TEXT NOT NULL DEFAULT 'feed',
   title TEXT NOT NULL,
   site_url TEXT NOT NULL,
-  feed_url TEXT NOT NULL UNIQUE,
+  feed_url TEXT NOT NULL,
   icon_url TEXT,
   followed INTEGER NOT NULL DEFAULT 1,
   etag TEXT,
   last_modified TEXT,
   fetched_at INTEGER,
-  error TEXT
+  error TEXT,
+  UNIQUE (user_id, feed_url)
 );
 
 CREATE TABLE IF NOT EXISTS articles (
   id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
   source_id INTEGER NOT NULL REFERENCES sources(id),
-  url TEXT NOT NULL UNIQUE,
+  url TEXT NOT NULL,
   title TEXT NOT NULL,
   excerpt TEXT NOT NULL DEFAULT '',
   image_url TEXT,
   image_checked INTEGER NOT NULL DEFAULT 0,
   author TEXT,
+  publisher TEXT,
   published_at INTEGER NOT NULL,
   fetched_at INTEGER NOT NULL,
   seen_at INTEGER,
   read_at INTEGER,
   liked_at INTEGER,
   saved_at INTEGER,
-  hidden_at INTEGER
+  hidden_at INTEGER,
+  UNIQUE (user_id, url)
 );
-CREATE INDEX IF NOT EXISTS articles_by_time ON articles(published_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS articles_by_time ON articles(user_id, published_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS articles_by_source ON articles(source_id, published_at DESC);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
@@ -56,8 +79,10 @@ END;
 
 CREATE TABLE IF NOT EXISTS trackers (
   id INTEGER PRIMARY KEY,
-  phrase TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  created_at INTEGER NOT NULL
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  phrase TEXT NOT NULL COLLATE NOCASE,
+  created_at INTEGER NOT NULL,
+  UNIQUE (user_id, phrase)
 );
 
 CREATE TABLE IF NOT EXISTS tracker_hits (
@@ -76,25 +101,50 @@ CREATE TABLE IF NOT EXISTS reader_cache (
 
 CREATE TABLE IF NOT EXISTS summaries (
   article_id INTEGER PRIMARY KEY REFERENCES articles(id),
+  lang TEXT NOT NULL,
   bullets TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS briefings (
-  day TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  day TEXT NOT NULL,
+  lang TEXT NOT NULL,
   body TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, day)
 );
 
 CREATE TABLE IF NOT EXISTS reading_days (
-  day TEXT PRIMARY KEY,
-  count INTEGER NOT NULL DEFAULT 0
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  day TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
 );
 `
 
-export function openDb(path: string): DB {
+function connect(path: string): DB {
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  return db
+}
+
+/** A database written before accounts existed has no owner for its rows. */
+function predatesAccounts(db: DB): boolean {
+  const columns = db.prepare(`SELECT name FROM pragma_table_info('sources')`).pluck().all() as string[]
+  return columns.length > 0 && !columns.includes('user_id')
+}
+
+export function openDb(path: string): DB {
+  let db = connect(path)
+  if (predatesAccounts(db)) {
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    db.close()
+    const kept = path.replace(/\.db$/, '-before-accounts.db')
+    renameSync(path, kept)
+    console.warn(`The existing database has no accounts and was set aside as ${kept}; starting a new one.`)
+    db = connect(path)
+  }
   db.exec(SCHEMA)
   return db
 }
@@ -123,24 +173,26 @@ export interface ArticleRow {
   excerpt: string
   image_url: string | null
   author: string | null
+  publisher: string | null
   published_at: number
   seen_at: number | null
   read_at: number | null
   liked_at: number | null
   saved_at: number | null
   source_id: number
+  source_kind: string
   source_title: string
   source_icon: string | null
   source_site: string
-  topic_slug: string
-  topic_name: string
+  topic_slug: string | null
+  topic_name: string | null
   has_summary: number
 }
 
 export const ARTICLE_COLUMNS = `
-  a.id, a.url, a.title, a.excerpt, a.image_url, a.author, a.published_at,
+  a.id, a.url, a.title, a.excerpt, a.image_url, a.author, a.publisher, a.published_at,
   a.seen_at, a.read_at, a.liked_at, a.saved_at,
-  s.id AS source_id, s.title AS source_title, s.icon_url AS source_icon, s.site_url AS source_site,
+  s.id AS source_id, s.kind AS source_kind, s.title AS source_title, s.icon_url AS source_icon, s.site_url AS source_site,
   t.slug AS topic_slug, t.name AS topic_name,
   EXISTS (SELECT 1 FROM summaries m WHERE m.article_id = a.id) AS has_summary
 `
@@ -148,7 +200,7 @@ export const ARTICLE_COLUMNS = `
 export const ARTICLE_FROM = `
   FROM articles a
   JOIN sources s ON s.id = a.source_id
-  JOIN topics t ON t.id = s.topic_id
+  LEFT JOIN topics t ON t.id = s.topic_id
 `
 
 export const ARTICLE_SELECT = `SELECT ${ARTICLE_COLUMNS} ${ARTICLE_FROM}`
@@ -167,8 +219,15 @@ export function toArticle(row: ArticleRow) {
     liked: row.liked_at !== null,
     saved: row.saved_at !== null,
     hasSummary: row.has_summary === 1,
-    source: { id: row.source_id, title: row.source_title, icon: row.source_icon, site: row.source_site },
-    topic: { slug: row.topic_slug, name: row.topic_name },
+    source: {
+      id: row.source_id,
+      // Search results name the outlet that published each item; the source row only names the search.
+      title: row.publisher ?? row.source_title,
+      icon: row.source_icon,
+      site: row.source_site,
+      managed: row.source_kind === 'feed',
+    },
+    topic: row.topic_slug && row.topic_name ? { slug: row.topic_slug, name: row.topic_name } : null,
   }
 }
 

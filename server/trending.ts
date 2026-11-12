@@ -25,6 +25,11 @@ export interface Trend {
   articles: number
 }
 
+const CJK = /[\u3400-\u9fff]/
+const CHINESE_FILLER = new Set(
+  '发布 宣布 推出 公布 曝光 上线 开启 正式 官方 最新 今日 今天 如何 什么 为何 可以 一个 我们 他们 这个 游戏 手机 公司 消息 表示 回应 全新 首次 即将 或将 来了'.split(' '),
+)
+
 function words(title: string): string[] {
   return title.match(/[\p{L}\p{N}][\p{L}\p{N}+#.'’-]*[\p{L}\p{N}+#]|[\p{L}\p{N}]/gu) ?? []
 }
@@ -34,9 +39,30 @@ function meaningful(word: string): boolean {
   return lower.length > 1 && !STOPWORDS.has(lower) && !/^\d+$/.test(lower)
 }
 
+/**
+ * Chinese has no spaces, and the names that trend are too new for a dictionary to split out,
+ * so every run of two to four characters is a candidate and the ones several sources share win.
+ */
+function chineseRuns(text: string): string[] {
+  const found: string[] = []
+  for (const [run] of text.matchAll(/[\u3400-\u9fff]+/g)) {
+    for (let size = 2; size <= 4; size++) {
+      for (let start = 0; start + size <= run.length; start++) {
+        const piece = run.slice(start, start + size)
+        if (!CHINESE_FILLER.has(piece)) found.push(piece)
+      }
+    }
+  }
+  return found
+}
+
 function phrases(title: string): Map<string, string> {
-  const tokens = words(title)
   const found = new Map<string, string>()
+  if (CJK.test(title)) {
+    for (const piece of chineseRuns(title)) found.set(piece, piece)
+    title = title.replace(/[\u3400-\u9fff]+/g, ' ')
+  }
+  const tokens = words(title)
   tokens.forEach((token, index) => {
     if (!meaningful(token)) return
     found.set(token.toLowerCase(), token)
@@ -99,6 +125,8 @@ export function trending(recent: TitleRow[], baseline: TitleRow[], baselineDays:
   for (const candidate of distinct) {
     const parts = candidate.key.split(' ')
     if (parts.some((part) => used.has(part))) continue
+    // Overlapping Chinese runs are fragments of one name; the first to rank stands for all of them.
+    if (CJK.test(candidate.key) && chosen.some((kept) => kept.key.includes(candidate.key) || candidate.key.includes(kept.key))) continue
     parts.forEach((part) => used.add(part))
     chosen.push(candidate)
     if (chosen.length === limit) break
@@ -109,12 +137,12 @@ export function trending(recent: TitleRow[], baseline: TitleRow[], baselineDays:
 const DAY = 24 * 60 * 60 * 1000
 const BASELINE_DAYS = 6
 
-export function currentTrends(db: DB, now = Date.now()): Trend[] {
+export function currentTrends(db: DB, userId: number, now = Date.now()): Trend[] {
   const between = db.prepare(
     `SELECT a.title, a.source_id FROM articles a JOIN sources s ON s.id = a.source_id
-     WHERE s.followed = 1 AND a.published_at >= ? AND a.published_at < ?`,
+     WHERE a.user_id = ? AND s.followed = 1 AND a.published_at >= ? AND a.published_at < ?`,
   )
-  const recent = between.all(now - DAY, now + 1) as TitleRow[]
-  const baseline = between.all(now - DAY * (BASELINE_DAYS + 1), now - DAY) as TitleRow[]
+  const recent = between.all(userId, now - DAY, now + 1) as TitleRow[]
+  const baseline = between.all(userId, now - DAY * (BASELINE_DAYS + 1), now - DAY) as TitleRow[]
   return trending(recent, baseline, BASELINE_DAYS)
 }

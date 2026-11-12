@@ -2,6 +2,7 @@ import Parser from 'rss-parser'
 import { decodeHTML } from 'entities'
 import { deleteArticles, type DB } from './db.ts'
 import { attributes, fetchHtml, pool, readText, request } from './http.ts'
+import { parseSearchUrl, searchEntries } from './search.ts'
 import { matchNewArticles } from './trackers.ts'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -25,6 +26,8 @@ export interface FeedItem {
   mediaContent?: MediaNode[]
   mediaThumbnail?: MediaNode[]
   mediaGroup?: { 'media:content'?: MediaNode[]; 'media:thumbnail'?: MediaNode[] }
+  newsSource?: string
+  newsImage?: string
 }
 
 export interface Entry {
@@ -33,6 +36,8 @@ export interface Entry {
   excerpt: string
   image: string | null
   author: string | null
+  /** The outlet or account behind an item, when the feed itself is a search across many of them. */
+  publisher?: string | null
   publishedAt: number
 }
 
@@ -43,6 +48,8 @@ const parser = new Parser<{ title?: string; link?: string }, FeedItem>({
       ['media:thumbnail', 'mediaThumbnail', { keepArray: true }],
       ['media:group', 'mediaGroup'],
       ['content:encoded', 'contentEncoded'],
+      ['News:Source', 'newsSource'],
+      ['News:Image', 'newsImage'],
     ],
   },
 })
@@ -157,44 +164,47 @@ export function toEntry(item: FeedItem, now: number, base?: string): Entry | nul
   }
 }
 
-interface SourceRow {
+export interface SourceRow {
   id: number
+  user_id: number
   site_url: string
   feed_url: string
   etag: string | null
   last_modified: string | null
 }
 
-/** Followed sources in ingest order: a story carried by two feeds stays with the earlier one. */
-function followedSources(db: DB): SourceRow[] {
+/** Followed sources in ingest order: within an account, a story carried by two feeds stays with the earlier one. */
+function followedSources(db: DB, userId?: number): SourceRow[] {
   return db
     .prepare(
-      `SELECT s.id, s.site_url, s.feed_url, s.etag, s.last_modified
-       FROM sources s JOIN topics t ON t.id = s.topic_id
-       WHERE s.followed = 1 ORDER BY t.position, s.id`,
+      `SELECT s.id, s.user_id, s.site_url, s.feed_url, s.etag, s.last_modified
+       FROM sources s LEFT JOIN topics t ON t.id = s.topic_id
+       WHERE s.followed = 1 AND (? IS NULL OR s.user_id = ?)
+       ORDER BY s.user_id, t.position, s.id`,
     )
-    .all() as SourceRow[]
+    .all(userId ?? null, userId ?? null) as SourceRow[]
 }
 
-export function ingest(db: DB, sourceId: number, entries: Entry[], now = Date.now()): number[] {
-  const order = new Map(followedSources(db).map((source, index) => [source.id, index]))
-  const existing = db.prepare('SELECT id, source_id FROM articles WHERE url = ?')
+export function ingest(db: DB, source: Pick<SourceRow, 'id' | 'user_id'>, entries: Entry[], now = Date.now()): number[] {
+  const order = new Map(followedSources(db, source.user_id).map((followed, index) => [followed.id, index]))
+  const existing = db.prepare('SELECT id, source_id FROM articles WHERE user_id = ? AND url = ?')
   const insert = db.prepare(
-    `INSERT INTO articles (source_id, url, title, excerpt, image_url, author, published_at, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO articles (user_id, source_id, url, title, excerpt, image_url, author, publisher, published_at, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const reassign = db.prepare('UPDATE articles SET source_id = ? WHERE id = ?')
   const added: number[] = []
   db.transaction(() => {
     for (const entry of entries) {
-      const found = existing.get(entry.url) as { id: number; source_id: number } | undefined
+      const found = existing.get(source.user_id, entry.url) as { id: number; source_id: number } | undefined
       if (!found) {
         const { lastInsertRowid } = insert.run(
-          sourceId, entry.url, entry.title, entry.excerpt, entry.image, entry.author, entry.publishedAt, now,
+          source.user_id, source.id, entry.url, entry.title, entry.excerpt, entry.image, entry.author,
+          entry.publisher ?? null, entry.publishedAt, now,
         )
         added.push(Number(lastInsertRowid))
-      } else if ((order.get(sourceId) ?? Infinity) < (order.get(found.source_id) ?? Infinity)) {
-        reassign.run(sourceId, found.id)
+      } else if ((order.get(source.id) ?? Infinity) < (order.get(found.source_id) ?? Infinity)) {
+        reassign.run(source.id, found.id)
       }
     }
   })()
@@ -208,6 +218,8 @@ type Fetched =
 
 async function fetchSource(source: SourceRow, now: number): Promise<Fetched> {
   try {
+    const search = parseSearchUrl(source.feed_url)
+    if (search) return { entries: await searchEntries(search.provider, search.query, now), etag: null, lastModified: null }
     const headers: Record<string, string> = { accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' }
     if (source.etag) headers['if-none-match'] = source.etag
     if (source.last_modified) headers['if-modified-since'] = source.last_modified
@@ -264,7 +276,7 @@ export function siteIcon(html: string | null, siteUrl: string): string {
 }
 
 async function fillMissingIcons(db: DB): Promise<void> {
-  const pending = db.prepare('SELECT id, site_url FROM sources WHERE icon_url IS NULL').all() as { id: number; site_url: string }[]
+  const pending = db.prepare(`SELECT id, site_url FROM sources WHERE icon_url IS NULL AND feed_url NOT LIKE 'search:%'`).all() as { id: number; site_url: string }[]
   const store = db.prepare('UPDATE sources SET icon_url = ? WHERE id = ?')
   await pool(pending, 5, async ({ id, site_url }) => {
     const html = await fetchHtml(site_url, { timeoutMs: 8_000, maxBytes: 200_000 }).catch(() => null)
@@ -294,8 +306,12 @@ export function refreshAll(db: DB): Promise<RefreshResult> {
   return running
 }
 
-export function refreshSource(db: DB, sourceId: number): Promise<RefreshResult> {
-  return refresh(db, followedSources(db).filter((source) => source.id === sourceId))
+export function refreshUser(db: DB, userId: number): Promise<RefreshResult> {
+  return refresh(db, followedSources(db, userId))
+}
+
+export function refreshSource(db: DB, userId: number, sourceId: number): Promise<RefreshResult> {
+  return refresh(db, followedSources(db, userId).filter((source) => source.id === sourceId))
 }
 
 async function refresh(db: DB, sources: SourceRow[]): Promise<RefreshResult> {
@@ -314,7 +330,7 @@ async function refresh(db: DB, sources: SourceRow[]): Promise<RefreshResult> {
     } else if ('unchanged' in result) {
       touch.run(now, source.id)
     } else {
-      added.push(...ingest(db, source.id, result.entries, now))
+      added.push(...ingest(db, source, result.entries, now))
       succeed.run(result.etag, result.lastModified, now, source.id)
     }
   })

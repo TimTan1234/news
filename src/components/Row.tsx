@@ -1,4 +1,5 @@
 import type { Article } from '../api/client.ts'
+import { useMessages } from '../i18n/index.ts'
 import { ago } from '../lib/format.ts'
 import { useOverlay } from '../lib/overlay.ts'
 import { Media, useImage } from './Post.tsx'
@@ -8,6 +9,7 @@ import s from './row.module.css'
 export function ArticleRow({ article, fresh = false }: { article: Article; fresh?: boolean }) {
   const overlay = useOverlay()
   const image = useImage(article)
+  const t = useMessages()
   return (
     <button className={s.row} onClick={() => overlay.open('read', article.id)}>
       <span className={s.text}>
@@ -15,7 +17,7 @@ export function ArticleRow({ article, fresh = false }: { article: Article; fresh
           <Avatar title={article.source.title} icon={article.source.icon} size={20} />
           <span className={s.source}>{article.source.title}</span>
           <span className={s.age}>{ago(article.publishedAt)}</span>
-          {fresh && <span className={s.fresh} aria-label="New" />}
+          {fresh && <span className={s.fresh} aria-label={t.activity.unread} />}
         </span>
         <span className={s.title}>{article.title}</span>
       </span>

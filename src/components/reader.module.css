@@ -10,6 +10,7 @@
 .sheet {
   width: 100%;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--canvas);
@@ -52,6 +53,7 @@
 
 .column {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   max-width: 680px;
   margin: 0 auto;
@@ -110,6 +112,7 @@
   font-size: var(--text-lg);
   line-height: 1.65;
   color: var(--ink);
+  min-width: 0;
   overflow-wrap: break-word;
 }
 

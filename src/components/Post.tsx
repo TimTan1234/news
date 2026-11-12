@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { Bookmark, Ellipsis, EyeOff, Heart, Link as LinkIcon, Send, Sparkles, UserMinus } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { api, type Article } from '../api/client.ts'
+import { api, errorText, type Article } from '../api/client.ts'
 import { invalidate, useSummary } from '../api/hooks.ts'
+import { messages, useMessages } from '../i18n/index.ts'
 import { ago } from '../lib/format.ts'
 import { share, useOverlay } from '../lib/overlay.ts'
 import { hide, markSeen, setLiked, setSaved, useFlags } from '../state/flags.ts'
@@ -43,8 +44,8 @@ export function Media({
 
 export async function shareArticle(article: Article): Promise<void> {
   const outcome = await share(article.title, article.url)
-  if (outcome === 'copied') toast('Link copied')
-  if (outcome === 'failed') toast('Could not share this link')
+  if (outcome === 'copied') toast(messages().common.linkCopied)
+  if (outcome === 'failed') toast(messages().common.shareFailed)
 }
 
 /** Marks the article seen once most of the card has been on screen. */
@@ -76,7 +77,7 @@ export function SummaryBlock({ summary }: { summary: ReturnType<typeof useSummar
       </div>
     )
   }
-  if (summary.isError) return <p className={cx(s.summary, ui.error)}>{summary.error.message}</p>
+  if (summary.isError) return <p className={cx(s.summary, ui.error)}>{errorText(summary.error)}</p>
   return summary.data ? <Bullets items={summary.data.bullets} /> : null
 }
 
@@ -98,6 +99,7 @@ export function PostCard({ article: base }: { article: Article }) {
   const [burst, setBurst] = useState(0)
   const summary = useSummary(article.id)
   const image = useImage(article)
+  const t = useMessages()
   useSeen(ref, base)
 
   if (article.hidden) return null
@@ -122,45 +124,57 @@ export function PostCard({ article: base }: { article: Article }) {
   const unfollow = async () => {
     await api(`/api/sources/${article.source.id}`, { method: 'PATCH', body: { followed: false } })
     invalidate('feed', 'stories', 'sources')
-    toast(`Unfollowed ${article.source.title}`)
+    toast(t.post.unfollowed(article.source.title))
   }
 
   const copy = async () => {
     await navigator.clipboard.writeText(article.url)
-    toast('Link copied')
+    toast(t.common.linkCopied)
   }
+
+  const byline = (
+    <>
+      <Avatar title={article.source.title} icon={article.source.icon} size={36} />
+      <span className={s.names}>
+        <span className={s.sourceName}>{article.source.title}</span>
+        {article.topic && <span className={s.topicName}>{article.topic.name}</span>}
+      </span>
+    </>
+  )
 
   return (
     <article ref={ref} className={s.post} data-post={article.id} tabIndex={-1}>
       <header className={s.head}>
-        <Link to={`/source/${article.source.id}`} className={s.byline}>
-          <Avatar title={article.source.title} icon={article.source.icon} size={36} />
-          <span className={s.names}>
-            <span className={s.sourceName}>{article.source.title}</span>
-            <span className={s.topicName}>{article.topic.name}</span>
-          </span>
-        </Link>
+        {article.source.managed ? (
+          <Link to={`/source/${article.source.id}`} className={s.byline}>
+            {byline}
+          </Link>
+        ) : (
+          <span className={s.byline}>{byline}</span>
+        )}
         <time className={s.age} dateTime={new Date(article.publishedAt).toISOString()}>
           {ago(article.publishedAt)}
         </time>
-        <Menu label="More" trigger={<Ellipsis size={20} />}>
+        <Menu label={t.common.more} trigger={<Ellipsis size={20} />}>
           {(close) => (
             <>
               <button className={ui.menuItem} role="menuitem" onClick={() => (close(), hide(article))}>
-                <EyeOff size={18} /> Hide this story
+                <EyeOff size={18} /> {t.post.hide}
               </button>
-              <button className={ui.menuItem} role="menuitem" onClick={() => (close(), void unfollow())}>
-                <UserMinus size={18} /> Unfollow {article.source.title}
-              </button>
+              {article.source.managed && (
+                <button className={ui.menuItem} role="menuitem" onClick={() => (close(), void unfollow())}>
+                  <UserMinus size={18} /> {t.post.unfollow(article.source.title)}
+                </button>
+              )}
               <button className={ui.menuItem} role="menuitem" onClick={() => (close(), void copy())}>
-                <LinkIcon size={18} /> Copy link
+                <LinkIcon size={18} /> {t.post.copyLink}
               </button>
             </>
           )}
         </Menu>
       </header>
 
-      <button className={s.media} onClick={onMediaClick} aria-label={`Read: ${article.title}`}>
+      <button className={s.media} onClick={onMediaClick} aria-label={t.post.read(article.title)}>
         <Media article={article} image={image} />
         {burst > 0 && <Heart key={burst} className={s.burst} size={96} aria-hidden />}
       </button>
@@ -169,7 +183,7 @@ export function PostCard({ article: base }: { article: Article }) {
         <button
           className={cx(ui.iconButton, article.liked && s.liked)}
           onClick={() => setLiked(article, !article.liked)}
-          aria-label="Like"
+          aria-label={t.common.like}
           aria-pressed={article.liked}
         >
           <Heart size={24} />
@@ -177,17 +191,17 @@ export function PostCard({ article: base }: { article: Article }) {
         <button
           className={cx(ui.iconButton, summary.data && s.summarized)}
           onClick={() => !summary.isPending && !summary.data && summary.mutate()}
-          aria-label="Summarize"
+          aria-label={t.common.summarize}
         >
           <Sparkles size={23} />
         </button>
-        <button className={ui.iconButton} onClick={() => void shareArticle(article)} aria-label="Share">
+        <button className={ui.iconButton} onClick={() => void shareArticle(article)} aria-label={t.common.share}>
           <Send size={22} />
         </button>
         <button
           className={cx(ui.iconButton, s.save, article.saved && s.saved)}
           onClick={() => setSaved(article, !article.saved)}
-          aria-label="Save"
+          aria-label={t.common.save}
           aria-pressed={article.saved}
         >
           <Bookmark size={24} />

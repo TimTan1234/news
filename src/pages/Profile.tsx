@@ -5,23 +5,23 @@ import { today, type Stats } from '../api/client.ts'
 import { useStats } from '../api/hooks.ts'
 import { TileGrid } from '../components/Feed.tsx'
 import { Empty, TopBar, cx, ui } from '../components/ui.tsx'
+import { useMessages } from '../i18n/index.ts'
 import { weekday } from '../lib/format.ts'
 import p from './pages.module.css'
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
-
 function WeekChart({ week }: { week: Stats['week'] }) {
   const peak = Math.max(1, ...week.map((entry) => entry.count))
+  const t = useMessages()
   return (
     <figure className={p.chart}>
-      <figcaption className={p.chartTitle}>Stories read this week</figcaption>
+      <figcaption className={p.chartTitle}>{t.profile.week}</figcaption>
       <ol className={p.bars}>
         {week.map((entry) => (
           <li
             key={entry.day}
             className={cx(p.barSlot, entry.day === today() && p.barToday)}
             tabIndex={0}
-            aria-label={`${new Date(`${entry.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' })}: ${plural(entry.count, 'story').replace('storys', 'stories')}`}
+            aria-label={t.profile.dayStories(weekday(entry.day, 'long'), entry.count)}
           >
             <span className={p.barValue}>{entry.count}</span>
             <span className={p.bar} style={{ height: `${(entry.count / peak) * 100}%` }} />
@@ -35,9 +35,10 @@ function WeekChart({ week }: { week: Stats['week'] }) {
 
 function TopicChart({ topics }: { topics: Stats['topics'] }) {
   const peak = Math.max(1, ...topics.map((topic) => topic.count))
+  const t = useMessages()
   return (
     <figure className={p.chart}>
-      <figcaption className={p.chartTitle}>By topic, last 30 days</figcaption>
+      <figcaption className={p.chartTitle}>{t.profile.byTopic}</figcaption>
       <ul className={p.topicBars}>
         {topics.map((topic) => (
           <li key={topic.slug} className={p.topicRow}>
@@ -56,11 +57,12 @@ function TopicChart({ topics }: { topics: Stats['topics'] }) {
 export function Profile() {
   const { data: stats } = useStats()
   const [tab, setTab] = useState<'saved' | 'liked'>('saved')
+  const t = useMessages()
 
   return (
     <div className={cx(p.page, p.wide)}>
-      <TopBar title="Profile">
-        <Link to="/settings" className={ui.iconButton} aria-label="Settings">
+      <TopBar title={t.profile.title}>
+        <Link to="/settings" className={ui.iconButton} aria-label={t.common.settings}>
           <SettingsIcon size={22} />
         </Link>
       </TopBar>
@@ -69,9 +71,9 @@ export function Profile() {
         <>
           <dl className={p.tiles}>
             {[
-              [stats.streak, 'day streak'],
-              [stats.today, 'read today'],
-              [stats.saved, 'saved'],
+              [stats.streak, t.profile.streak],
+              [stats.today, t.profile.today],
+              [stats.saved, t.profile.saved],
             ].map(([value, label]) => (
               <div key={label} className={p.tile}>
                 <dt>{label}</dt>
@@ -89,7 +91,7 @@ export function Profile() {
       <div className={p.tabs} role="tablist">
         {(['saved', 'liked'] as const).map((name) => (
           <button key={name} role="tab" aria-selected={tab === name} className={cx(p.tab, tab === name && p.tabActive)} onClick={() => setTab(name)}>
-            {name === 'saved' ? 'Saved' : 'Liked'}
+            {name === 'saved' ? t.profile.tabSaved : t.profile.tabLiked}
           </button>
         ))}
       </div>
@@ -98,9 +100,9 @@ export function Profile() {
         params={{ filter: tab }}
         empty={
           tab === 'saved' ? (
-            <Empty title="Nothing saved yet">Tap the bookmark on a story to keep it here.</Empty>
+            <Empty title={t.profile.savedEmptyTitle}>{t.profile.savedEmptyBody}</Empty>
           ) : (
-            <Empty title="No likes yet">Double-tap a story's image to like it.</Empty>
+            <Empty title={t.profile.likedEmptyTitle}>{t.profile.likedEmptyBody}</Empty>
           )
         }
       />

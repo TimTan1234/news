@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { useTrending } from '../api/hooks.ts'
+import { api, errorText, type Source } from '../api/client.ts'
+import { invalidate, useFeed, useProviders, useSources, useTopics, useTrending, useWebSearch } from '../api/hooks.ts'
 import { TileGrid } from '../components/Feed.tsx'
+import { ArticleRow } from '../components/Row.tsx'
 import { Empty, cx, ui } from '../components/ui.tsx'
+import { useMessages } from '../i18n/index.ts'
+import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
+
+const FEED = 'feed'
 
 export function Explore() {
   const [search, setSearch] = useSearchParams()
@@ -13,13 +19,26 @@ export function Explore() {
   const [text, setText] = useState(q)
   const input = useRef<HTMLInputElement>(null)
   const { data: trends } = useTrending()
+  const { data: providers } = useProviders()
+  const local = useFeed({ q }, { limit: 30, enabled: Boolean(q) })
+  const t = useMessages()
 
-  const apply = (value: string) => {
+  // A search that finds nothing in the feed carries straight on to the news, unless a place to look was chosen.
+  const localEmpty = local.isSuccess && local.data.pages[0].items.length === 0
+  const scope = search.get('in') ?? (localEmpty && providers?.length ? providers[0].id : FEED)
+
+  const update = (change: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(search)
-    if (value.trim()) next.set('q', value.trim())
-    else next.delete('q')
+    change(next)
     setSearch(next, { replace: true, state: location.state })
   }
+
+  const apply = (value: string) =>
+    update((next) => {
+      next.delete('in')
+      if (value.trim()) next.set('q', value.trim())
+      else next.delete('q')
+    })
 
   // Typing settles for a moment before it becomes a search.
   useEffect(() => {
@@ -37,6 +56,9 @@ export function Explore() {
     apply(phrase)
   }
 
+  const provider = providers?.find((candidate) => candidate.id === scope)
+  const label = (id: string, name: string) => t.explore.providers[id] ?? name
+
   return (
     <div className={cx(p.page, p.wide)}>
       <div className={p.searchBar}>
@@ -46,32 +68,119 @@ export function Explore() {
             ref={input}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="Search stories"
-            aria-label="Search stories"
+            placeholder={t.explore.search}
+            aria-label={t.explore.search}
             enterKeyHint="search"
           />
           {text && (
-            <button onClick={() => pick('')} aria-label="Clear search">
+            <button onClick={() => pick('')} aria-label={t.explore.clear}>
               <X size={18} />
             </button>
           )}
         </label>
       </div>
-      {!!trends?.length && (
-        <div className={p.chips} aria-label="Trending">
-          {trends.map((trend) => (
-            <button key={trend.phrase} className={cx(ui.chip, q === trend.phrase && ui.chipActive)} onClick={() => pick(trend.phrase)}>
-              {trend.phrase}
+
+      {q ? (
+        <div className={p.chips} role="tablist">
+          {[{ id: FEED, name: t.explore.yourFeed }, ...(providers ?? [])].map((item) => (
+            <button
+              key={item.id}
+              role="tab"
+              aria-selected={scope === item.id}
+              className={cx(ui.chip, scope === item.id && ui.chipActive)}
+              onClick={() => update((next) => next.set('in', item.id))}
+            >
+              {item.id === FEED ? item.name : label(item.id, item.name)}
             </button>
           ))}
         </div>
+      ) : (
+        !!trends?.length && (
+          <div className={p.chips} aria-label={t.explore.trending}>
+            {trends.map((trend) => (
+              <button key={trend.phrase} className={ui.chip} onClick={() => pick(trend.phrase)}>
+                {trend.phrase}
+              </button>
+            ))}
+          </div>
+        )
       )}
-      <TileGrid
-        params={q ? { q } : {}}
-        empty={
-          q ? <Empty title={`Nothing matches “${q}”`}>Try a shorter phrase, or track it from Activity to catch it later.</Empty> : <Empty title="No stories yet" />
-        }
-      />
+
+      {q && provider ? (
+        <WebResults key={`${provider.id}:${q}`} provider={provider.id} name={label(provider.id, provider.name)} query={q} />
+      ) : (
+        <TileGrid params={q ? { q } : {}} empty={<Empty title={q ? t.explore.noMatch(q) : t.explore.empty} />} />
+      )}
+    </div>
+  )
+}
+
+function WebResults({ provider, name, query }: { provider: string; name: string; query: string }) {
+  const results = useWebSearch(provider, query)
+  const t = useMessages()
+
+  if (results.isPending) {
+    return (
+      <div className={p.results} aria-busy>
+        {Array.from({ length: 6 }, (_, index) => (
+          <span key={index} className={cx(p.resultPlaceholder, ui.skeleton)} />
+        ))}
+      </div>
+    )
+  }
+  if (results.isError) return <Empty title={t.explore.webFailed(name)}>{errorText(results.error)}</Empty>
+  if (results.data.items.length === 0) return <Empty title={t.explore.webEmpty(name, query)} />
+
+  return (
+    <>
+      <FollowSearch provider={provider} query={query} />
+      <div className={p.results}>
+        {results.data.items.map((article) => (
+          <ArticleRow key={article.id} article={article} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** Following a search turns it into a source: its new results arrive in the feed with every refresh. */
+function FollowSearch({ provider, query }: { provider: string; query: string }) {
+  const { data: topics } = useTopics()
+  const { data: sources } = useSources()
+  const [topicId, setTopicId] = useState<number | ''>('')
+  const [busy, setBusy] = useState(false)
+  const t = useMessages()
+  const chosen = topicId || topics?.[0]?.id
+  const following = sources?.some((source) => source.feedUrl === `search:${provider}:${query}`)
+
+  const follow = async () => {
+    setBusy(true)
+    try {
+      const added = await api<Source>('/api/sources', { body: { search: { provider, query }, topicId: chosen } })
+      toast(t.explore.followingSearch(added.title))
+      invalidate('sources', 'topics', 'feed', 'stories', 'trending')
+    } catch (error) {
+      toast(errorText(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!topics?.length) return null
+  return (
+    <div className={p.followBar}>
+      {!following && (
+        <select className={cx(ui.input, p.select)} value={chosen ?? ''} onChange={(event) => setTopicId(Number(event.target.value))} aria-label={t.explore.topic}>
+          {topics.map((topic) => (
+            <option key={topic.id} value={topic.id}>
+              {topic.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <button className={cx(ui.button, !following && ui.primary)} onClick={() => void follow()} disabled={busy || following}>
+        {following ? t.common.following : t.explore.followSearch}
+      </button>
     </div>
   )
 }

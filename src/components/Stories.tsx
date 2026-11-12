@@ -3,6 +3,7 @@ import { Bookmark, ChevronLeft, ChevronRight, Heart, Send, X } from 'lucide-reac
 import { useSearchParams } from 'react-router-dom'
 import type { Article, Story } from '../api/client.ts'
 import { useStories } from '../api/hooks.ts'
+import { useMessages } from '../i18n/index.ts'
 import { useKey, useScrollLock } from '../lib/dom.ts'
 import { ago } from '../lib/format.ts'
 import { useOverlay } from '../lib/overlay.ts'
@@ -16,6 +17,7 @@ const unread = (story: Story) => story.items.filter((item) => !withFlags(item).s
 export function StoriesRail() {
   const { data, isPending } = useStories()
   const overlay = useOverlay()
+  const t = useMessages()
   useFlagChanges()
 
   if (isPending) {
@@ -30,13 +32,13 @@ export function StoriesRail() {
   if (!data?.length) return null
 
   return (
-    <ul className={s.rail} aria-label="Stories">
+    <ul className={s.rail} aria-label={t.stories.label}>
       {data.map((story) => (
         <li key={story.source.id}>
           <button
             className={s.story}
             onClick={() => overlay.open('story', story.source.id)}
-            aria-label={`${story.source.title}, ${unread(story)} unread`}
+            aria-label={t.stories.unread(story.source.title, unread(story))}
           >
             <Avatar
               title={story.source.title}
@@ -64,6 +66,7 @@ export function StoryViewer({ sourceId }: { sourceId: number }) {
   const [held, setHeld] = useState(false)
   const press = useRef<{ x: number; y: number; at: number } | null>(null)
   const frame = useRef<HTMLDivElement>(null)
+  const t = useMessages()
   useScrollLock()
 
   // The order is frozen when the viewer opens, so marking items seen cannot reshuffle it mid-play.
@@ -132,8 +135,8 @@ export function StoryViewer({ sourceId }: { sourceId: number }) {
   }
 
   return (
-    <div className={s.backdrop} role="dialog" aria-modal aria-label={`Stories from ${story.source.title}`}>
-      <button className={cx(s.step, s.stepBack)} onClick={previous} aria-label="Previous story">
+    <div className={s.backdrop} role="dialog" aria-modal aria-label={t.stories.from(story.source.title)}>
+      <button className={cx(s.step, s.stepBack)} onClick={previous} aria-label={t.stories.previous}>
         <ChevronLeft size={28} />
       </button>
 
@@ -174,7 +177,7 @@ export function StoryViewer({ sourceId }: { sourceId: number }) {
             <Avatar title={story.source.title} icon={story.source.icon} size={32} />
             <span className={s.sourceName}>{story.source.title}</span>
             <span className={s.age}>{ago(article.publishedAt)}</span>
-            <button className={s.control} onClick={() => overlay.close('story')} aria-label="Close stories">
+            <button className={s.control} onClick={() => overlay.close('story')} aria-label={t.stories.close}>
               <X size={24} />
             </button>
           </div>
@@ -183,7 +186,7 @@ export function StoryViewer({ sourceId }: { sourceId: number }) {
         <StoryActions article={article} onRead={openReader} />
       </div>
 
-      <button className={cx(s.step, s.stepNext)} onClick={next} aria-label="Next story">
+      <button className={cx(s.step, s.stepNext)} onClick={next} aria-label={t.stories.next}>
         <ChevronRight size={28} />
       </button>
     </div>
@@ -210,7 +213,7 @@ function Slide({ article, gestures }: { article: Article; gestures: Gestures }) 
           </div>
         )}
         <div className={s.copy}>
-          <span className={s.topic}>{article.topic.name}</span>
+          {article.topic && <span className={s.topic}>{article.topic.name}</span>}
           <h2 className={s.headline}>{article.title}</h2>
           {article.excerpt && <p className={s.excerpt}>{article.excerpt}</p>}
         </div>
@@ -221,15 +224,16 @@ function Slide({ article, gestures }: { article: Article; gestures: Gestures }) 
 
 function StoryActions({ article: base, onRead }: { article: Article; onRead: () => void }) {
   const article = useFlags(base)
+  const t = useMessages()
   return (
     <div className={s.bottom}>
       <button className={s.readButton} onClick={onRead}>
-        Read story
+        {t.stories.read}
       </button>
       <button
         className={cx(s.control, article.liked && s.liked)}
         onClick={() => setLiked(article, !article.liked)}
-        aria-label="Like"
+        aria-label={t.common.like}
         aria-pressed={article.liked}
       >
         <Heart size={26} />
@@ -237,12 +241,12 @@ function StoryActions({ article: base, onRead }: { article: Article; onRead: () 
       <button
         className={cx(s.control, article.saved && s.saved)}
         onClick={() => setSaved(article, !article.saved)}
-        aria-label="Save"
+        aria-label={t.common.save}
         aria-pressed={article.saved}
       >
         <Bookmark size={26} />
       </button>
-      <button className={s.control} onClick={() => void shareArticle(article)} aria-label="Share">
+      <button className={s.control} onClick={() => void shareArticle(article)} aria-label={t.common.share}>
         <Send size={24} />
       </button>
     </div>

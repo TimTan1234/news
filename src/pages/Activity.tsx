@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { api, type ActivityHit } from '../api/client.ts'
+import { api, errorText, type ActivityHit } from '../api/client.ts'
 import { invalidate, useActivity, useTrackers } from '../api/hooks.ts'
 import { queryClient } from '../api/query.ts'
 import { ArticleRow } from '../components/Row.tsx'
 import { Empty, TopBar, cx, ui } from '../components/ui.tsx'
+import { useMessages } from '../i18n/index.ts'
 import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
 
@@ -13,6 +14,7 @@ const PER_KEYWORD = 6
 export function TrackerForm() {
   const [phrase, setPhrase] = useState('')
   const [busy, setBusy] = useState(false)
+  const t = useMessages()
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -20,11 +22,11 @@ export function TrackerForm() {
     setBusy(true)
     try {
       const { hits } = await api<{ hits: number }>('/api/trackers', { body: { phrase } })
-      toast(hits ? `Tracking “${phrase.trim()}”, ${hits} recent ${hits === 1 ? 'match' : 'matches'}` : `Tracking “${phrase.trim()}”`)
+      toast(hits ? t.activity.trackingWithMatches(phrase.trim(), hits) : t.activity.tracking(phrase.trim()))
       setPhrase('')
       invalidate('trackers', 'activity')
     } catch (error) {
-      toast((error as Error).message)
+      toast(errorText(error))
     } finally {
       setBusy(false)
     }
@@ -36,11 +38,11 @@ export function TrackerForm() {
         className={ui.input}
         value={phrase}
         onChange={(event) => setPhrase(event.target.value)}
-        placeholder="Track a keyword, like “Switch 2”"
-        aria-label="Keyword to track"
+        placeholder={t.activity.placeholder}
+        aria-label={t.activity.keyword}
       />
       <button className={cx(ui.button, ui.primary)} disabled={busy || !phrase.trim()}>
-        Track
+        {t.activity.track}
       </button>
     </form>
   )
@@ -48,6 +50,7 @@ export function TrackerForm() {
 
 export function TrackerChips() {
   const { data: trackers } = useTrackers()
+  const t = useMessages()
   const remove = async (id: number) => {
     await api(`/api/trackers/${id}`, { method: 'DELETE' })
     invalidate('trackers', 'activity')
@@ -58,7 +61,7 @@ export function TrackerChips() {
       {trackers.map((tracker) => (
         <li key={tracker.id} className={ui.chip}>
           {tracker.phrase}
-          <button onClick={() => void remove(tracker.id)} aria-label={`Stop tracking ${tracker.phrase}`}>
+          <button onClick={() => void remove(tracker.id)} aria-label={t.activity.stop(tracker.phrase)}>
             <X size={15} />
           </button>
         </li>
@@ -70,6 +73,7 @@ export function TrackerChips() {
 export function Activity() {
   const { data: hits, isPending } = useActivity()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const t = useMessages()
 
   // Opening the screen is what marks matches as seen; the dots stay for this visit.
   useEffect(() => {
@@ -95,13 +99,13 @@ export function Activity() {
 
   return (
     <div className={p.page}>
-      <TopBar title="Activity" />
+      <TopBar title={t.activity.title} />
       <div className={p.block}>
         <TrackerForm />
         <TrackerChips />
       </div>
       {isPending ? null : ordered.length === 0 ? (
-        <Empty title="Nothing tracked yet">Add a keyword and every new story that mentions it shows up here.</Empty>
+        <Empty title={t.activity.emptyTitle}>{t.activity.emptyBody}</Empty>
       ) : (
         ordered.map(([id, group]) => {
           const shown = expanded.has(id) ? group.hits : group.hits.slice(0, PER_KEYWORD)
@@ -110,14 +114,14 @@ export function Activity() {
             <section key={id} className={p.block}>
               <h2 className={p.groupTitle}>
                 {group.phrase}
-                {fresh > 0 && <span className={p.badge}>{fresh} new</span>}
+                {fresh > 0 && <span className={p.badge}>{t.activity.fresh(fresh)}</span>}
               </h2>
               {shown.map((hit) => (
                 <ArticleRow key={hit.article.id} article={hit.article} fresh={!hit.seen} />
               ))}
               {group.hits.length > shown.length && (
                 <button className={p.textButton} onClick={() => setExpanded(new Set(expanded).add(id))}>
-                  Show {group.hits.length - shown.length} more
+                  {t.activity.showMore(group.hits.length - shown.length)}
                 </button>
               )}
             </section>

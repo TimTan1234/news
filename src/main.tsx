@@ -4,6 +4,9 @@ import '@fontsource-variable/bricolage-grotesque/standard.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import { App } from './App.tsx'
+import { loadSession } from './state/session.ts'
+
+void loadSession()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,6 +1,6 @@
 :root {
   /* One family in two voices: headlines run condensed and heavy, everything else at normal width. */
-  --font: 'Bricolage Grotesque Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font: 'Bricolage Grotesque Variable', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   --headline-stretch: 75%;
   --headline-weight: 800;
 

@@ -1,24 +1,27 @@
+import { dateLocale, messages } from '../i18n/index.ts'
+
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 export function ago(timestamp: number, now = Date.now()): string {
   const elapsed = now - timestamp
-  if (elapsed < MINUTE) return 'now'
-  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m`
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h`
-  if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}d`
-  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const { time } = messages()
+  if (elapsed < MINUTE) return time.now
+  if (elapsed < HOUR) return time.minutes(Math.floor(elapsed / MINUTE))
+  if (elapsed < DAY) return time.hours(Math.floor(elapsed / HOUR))
+  if (elapsed < 7 * DAY) return time.days(Math.floor(elapsed / DAY))
+  return new Date(timestamp).toLocaleDateString(dateLocale(), { month: 'short', day: 'numeric' })
 }
 
 export function longDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  return new Date(timestamp).toLocaleDateString(dateLocale(), { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 export function clock(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return new Date(timestamp).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' })
 }
 
-export function weekday(day: string): string {
-  return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })
+export function weekday(day: string, width: 'narrow' | 'long' = 'narrow'): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString(dateLocale(), { weekday: width })
 }

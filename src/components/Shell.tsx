@@ -2,17 +2,18 @@ import { Bell, CircleUser, House, Search, Sparkles } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client.ts'
 import { invalidate, useActivityCount, useSources, useTrackers, useTrending } from '../api/hooks.ts'
+import { useMessages } from '../i18n/index.ts'
 import { useKey } from '../lib/dom.ts'
 import { Avatar, cx, ui } from './ui.tsx'
 import s from './shell.module.css'
 
 const NAV = [
-  { to: '/', label: 'Home', icon: House },
-  { to: '/explore', label: 'Explore', icon: Search },
-  { to: '/briefing', label: 'Briefing', icon: Sparkles },
-  { to: '/activity', label: 'Activity', icon: Bell },
-  { to: '/profile', label: 'Profile', icon: CircleUser },
-]
+  { to: '/', key: 'home', icon: House },
+  { to: '/explore', key: 'explore', icon: Search },
+  { to: '/briefing', key: 'briefing', icon: Sparkles },
+  { to: '/activity', key: 'activity', icon: Bell },
+  { to: '/profile', key: 'profile', icon: CircleUser },
+] as const
 
 const WIDE_PAGES = ['/explore', '/profile', '/settings']
 
@@ -32,6 +33,7 @@ export function Shell() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { data: activity } = useActivityCount()
+  const t = useMessages()
   const wide = WIDE_PAGES.some((page) => pathname.startsWith(page))
 
   useKey((event) => {
@@ -43,17 +45,17 @@ export function Shell() {
 
   return (
     <div className={cx(s.shell, !wide && s.withRail)}>
-      <nav className={s.nav} aria-label="Main">
+      <nav className={s.nav} aria-label={t.nav.main}>
         <Link to="/" className={s.brand}>
           <Wordmark />
         </Link>
-        {NAV.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cx(s.link, isActive && s.active)} aria-label={label}>
+        {NAV.map(({ to, key, icon: Icon }) => (
+          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cx(s.link, isActive && s.active)} aria-label={t.nav[key]}>
             <span className={s.icon}>
               <Icon size={24} />
               {to === '/activity' && !!activity?.unseen && <span className={s.dot} />}
             </span>
-            <span className={s.label}>{label}</span>
+            <span className={s.label}>{t.nav[key]}</span>
           </NavLink>
         ))}
       </nav>
@@ -69,6 +71,7 @@ function Rail() {
   const { data: trends } = useTrending()
   const { data: trackers } = useTrackers()
   const { data: sources } = useSources()
+  const t = useMessages()
   const suggested = sources?.filter((source) => !source.followed).slice(0, 5) ?? []
 
   const follow = async (id: number) => {
@@ -80,13 +83,13 @@ function Rail() {
     <aside className={s.rail}>
       {!!trends?.length && (
         <section>
-          <h2 className={s.railTitle}>Trending</h2>
+          <h2 className={s.railTitle}>{t.home.trending}</h2>
           <ol className={s.trends}>
             {trends.slice(0, 8).map((trend) => (
               <li key={trend.phrase}>
                 <Link to={`/explore?q=${encodeURIComponent(trend.phrase)}`} className={s.trend}>
                   <span className={s.trendPhrase}>{trend.phrase}</span>
-                  <span className={s.trendMeta}>{trend.sources} sources</span>
+                  <span className={s.trendMeta}>{t.home.sources(trend.sources)}</span>
                 </Link>
               </li>
             ))}
@@ -96,7 +99,7 @@ function Rail() {
 
       {!!trackers?.length && (
         <section>
-          <h2 className={s.railTitle}>Tracking</h2>
+          <h2 className={s.railTitle}>{t.home.tracking}</h2>
           <ul className={s.tracked}>
             {trackers.map((tracker) => (
               <li key={tracker.id}>
@@ -112,7 +115,7 @@ function Rail() {
 
       {suggested.length > 0 && (
         <section>
-          <h2 className={s.railTitle}>Suggested</h2>
+          <h2 className={s.railTitle}>{t.home.suggested}</h2>
           <ul className={s.suggested}>
             {suggested.map((source) => (
               <li key={source.id} className={s.suggestion}>
@@ -121,7 +124,7 @@ function Rail() {
                   <span>{source.title}</span>
                 </Link>
                 <button className={s.follow} onClick={() => void follow(source.id)}>
-                  Follow
+                  {t.common.follow}
                 </button>
               </li>
             ))}

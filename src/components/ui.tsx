@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useMessages } from '../i18n/index.ts'
 import { useStore } from '../state/store.ts'
 import { toastStore } from '../state/toast.ts'
 import s from './ui.module.css'
@@ -66,10 +67,11 @@ export function Avatar({
 
 export function TopBar({ title, back, children }: { title: ReactNode; back?: boolean; children?: ReactNode }) {
   const navigate = useNavigate()
+  const t = useMessages()
   return (
     <header className={s.topbar}>
       {back && (
-        <button className={s.iconButton} onClick={() => navigate(-1)} aria-label="Back">
+        <button className={s.iconButton} onClick={() => navigate(-1)} aria-label={t.common.back}>
           <ArrowLeft size={22} />
         </button>
       )}

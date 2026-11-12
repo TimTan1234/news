@@ -90,6 +90,67 @@
   gap: var(--space-2);
 }
 
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.field > span {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.field small,
+.muted {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Sign in */
+
+.auth {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: var(--space-5);
+  max-width: 360px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.authIntro {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--ink-muted);
+}
+
+.authMark {
+  font-size: var(--text-4xl);
+}
+
+.authMark svg {
+  width: 36px;
+  height: 36px;
+}
+
+.authForm {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.authForm input,
+.authForm button {
+  height: 44px;
+}
+
+.authLang {
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--ink-faint);
+}
+
 /* Source page */
 
 .profileHead {
@@ -156,6 +217,25 @@
   display: grid;
   place-items: center;
   color: var(--ink-muted);
+}
+
+.followBar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.results {
+  display: grid;
+  padding: var(--space-2) var(--space-4) var(--space-7);
+}
+
+.resultPlaceholder {
+  height: 72px;
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-control);
 }
 
 /* Briefing */
@@ -477,7 +557,9 @@
 
 @media (min-width: 600px) {
   .chips,
-  .searchBar {
+  .searchBar,
+  .followBar,
+  .results {
     padding-left: 0;
     padding-right: 0;
   }
@@ -499,5 +581,10 @@
 @media (min-width: 900px) {
   .mobileOnly {
     display: none;
+  }
+
+  .results {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--space-6);
   }
 }

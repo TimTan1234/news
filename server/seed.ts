@@ -1,8 +1,9 @@
 import type { DB } from './db.ts'
 
-const DEFAULTS: { name: string; slug: string; sources: [title: string, site: string, feed: string][] }[] = [
+const DEFAULTS: { name: string; zh: string; slug: string; sources: [title: string, site: string, feed: string][] }[] = [
   {
     name: 'AI',
+    zh: 'AI',
     slug: 'ai',
     sources: [
       ['The Verge AI', 'https://www.theverge.com/ai-artificial-intelligence', 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml'],
@@ -18,6 +19,7 @@ const DEFAULTS: { name: string; slug: string; sources: [title: string, site: str
   },
   {
     name: 'Games',
+    zh: '游戏',
     slug: 'games',
     sources: [
       ['IGN', 'https://www.ign.com', 'https://feeds.feedburner.com/ign/all'],
@@ -33,6 +35,7 @@ const DEFAULTS: { name: string; slug: string; sources: [title: string, site: str
   },
   {
     name: 'Tech',
+    zh: '科技',
     slug: 'tech',
     sources: [
       ['The Verge', 'https://www.theverge.com', 'https://www.theverge.com/rss/index.xml'],
@@ -48,15 +51,14 @@ const DEFAULTS: { name: string; slug: string; sources: [title: string, site: str
   },
 ]
 
-export function seed(db: DB): void {
-  const count = db.prepare('SELECT COUNT(*) FROM topics').pluck().get() as number
-  if (count > 0) return
-  const addTopic = db.prepare('INSERT INTO topics (name, slug, position) VALUES (?, ?, ?)')
-  const addSource = db.prepare('INSERT INTO sources (topic_id, title, site_url, feed_url) VALUES (?, ?, ?, ?)')
+/** Gives a new account the default topics and sources, with the topics named in its language. */
+export function seedUser(db: DB, userId: number, lang: 'en' | 'zh' = 'en'): void {
+  const addTopic = db.prepare('INSERT INTO topics (user_id, name, slug, position) VALUES (?, ?, ?, ?)')
+  const addSource = db.prepare('INSERT INTO sources (user_id, topic_id, title, site_url, feed_url) VALUES (?, ?, ?, ?, ?)')
   db.transaction(() => {
     DEFAULTS.forEach((topic, position) => {
-      const { lastInsertRowid } = addTopic.run(topic.name, topic.slug, position)
-      for (const [title, site, feed] of topic.sources) addSource.run(lastInsertRowid, title, site, feed)
+      const { lastInsertRowid } = addTopic.run(userId, lang === 'zh' ? topic.zh : topic.name, topic.slug, position)
+      for (const [title, site, feed] of topic.sources) addSource.run(userId, lastInsertRowid, title, site, feed)
     })
   })()
 }

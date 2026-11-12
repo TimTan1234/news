@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, type ReactNode } from 'react'
 import { CircleCheck } from 'lucide-react'
-import type { Article, FeedParams } from '../api/client.ts'
+import { errorText, type Article, type FeedParams } from '../api/client.ts'
 import { useFeed, useLoadMore } from '../api/hooks.ts'
+import { useMessages } from '../i18n/index.ts'
 import { useOverlay } from '../lib/overlay.ts'
 import { setLiked, setSaved, withFlags } from '../state/flags.ts'
 import { Media, PostCard, PostSkeleton, useImage } from './Post.tsx'
@@ -49,6 +50,7 @@ export function Feed({ params, caughtUp = false, empty }: { params: FeedParams; 
   const query = useFeed(params)
   const more = useLoadMore(query)
   const items = query.data?.pages.flatMap((page) => page.items) ?? []
+  const t = useMessages()
   useFeedKeys(items)
 
   // The mark is fixed when the feed first loads, so the divider stays put while this visit's posts become seen.
@@ -67,7 +69,7 @@ export function Feed({ params, caughtUp = false, empty }: { params: FeedParams; 
       </div>
     )
   }
-  if (query.isError) return <Empty title="The feed did not load">{query.error.message}</Empty>
+  if (query.isError) return <Empty title={t.feed.loadFailed}>{errorText(query.error)}</Empty>
   if (items.length === 0) return <>{empty}</>
 
   return (
@@ -77,7 +79,7 @@ export function Feed({ params, caughtUp = false, empty }: { params: FeedParams; 
           {index === boundary && index > 0 && (
             <div className={s.caughtUp}>
               <CircleCheck size={40} strokeWidth={1.5} />
-              <p>You're all caught up</p>
+              <p>{t.feed.caughtUp}</p>
             </div>
           )}
           <PostCard article={item} />
@@ -109,6 +111,7 @@ export function TileGrid({ params, empty }: { params: FeedParams; empty: ReactNo
   const query = useFeed(params, { limit: 30 })
   const more = useLoadMore(query)
   const overlay = useOverlay()
+  const t = useMessages()
   const items = query.data?.pages.flatMap((page) => page.items) ?? []
 
   if (query.isPending) {
@@ -120,7 +123,7 @@ export function TileGrid({ params, empty }: { params: FeedParams; empty: ReactNo
       </div>
     )
   }
-  if (query.isError) return <Empty title="Nothing loaded">{query.error.message}</Empty>
+  if (query.isError) return <Empty title={t.feed.nothingLoaded}>{errorText(query.error)}</Empty>
   if (items.length === 0) return <>{empty}</>
 
   return (

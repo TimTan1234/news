@@ -9,9 +9,13 @@ export interface OpmlSource {
   feedUrl: string
 }
 
-export function exportOpml(db: DB): string {
-  const topics = db.prepare('SELECT id, name FROM topics ORDER BY position, id').all() as { id: number; name: string }[]
-  const sources = db.prepare('SELECT title, site_url, feed_url FROM sources WHERE topic_id = ? ORDER BY id')
+export function exportOpml(db: DB, userId: number): string {
+  const topics = db.prepare('SELECT id, name FROM topics WHERE user_id = ? ORDER BY position, id').all(userId) as {
+    id: number
+    name: string
+  }[]
+  // Sources that follow a search have no feed address another reader could use.
+  const sources = db.prepare(`SELECT title, site_url, feed_url FROM sources WHERE topic_id = ? AND feed_url LIKE 'http%' ORDER BY id`)
   const body = topics
     .map((topic) => {
       const rows = sources.all(topic.id) as { title: string; site_url: string; feed_url: string }[]

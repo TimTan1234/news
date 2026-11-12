@@ -1,8 +1,13 @@
+import { messages } from '../i18n/index.ts'
+import { sessionStore } from '../state/session.ts'
+
 export interface SourceRef {
   id: number
   title: string
   icon: string | null
   site: string
+  /** False for the hidden source that holds one-off search results. */
+  managed: boolean
 }
 
 export interface Article {
@@ -19,7 +24,22 @@ export interface Article {
   saved: boolean
   hasSummary: boolean
   source: SourceRef
-  topic: { slug: string; name: string }
+  topic: { slug: string; name: string } | null
+}
+
+export interface StoredSummary {
+  lang: string
+  bullets: string[]
+}
+
+export interface SearchProvider {
+  id: string
+  name: string
+}
+
+export interface User {
+  id: number
+  username: string
 }
 
 export interface FeedPage {
@@ -103,7 +123,21 @@ export interface BriefingResult {
   articles?: Record<number, Article>
 }
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
+/** The message for a failure in the current language, falling back to the server's own wording. */
+export function errorText(error: unknown): string {
+  const code = error instanceof ApiError ? error.code : undefined
+  return (code && messages().errors[code]) || (error instanceof Error && error.message) || messages().errors.fallback
+}
 
 export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const hasBody = options.body !== undefined
@@ -113,7 +147,10 @@ export async function api<T>(path: string, options: { method?: string; body?: un
     body: hasBody ? JSON.stringify(options.body) : undefined,
   })
   const data = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(data?.error ?? `Request failed (${res.status})`)
+  if (!res.ok) {
+    if (data?.code === 'signed_out') sessionStore.set({ status: 'out', user: null })
+    throw new ApiError(data?.error ?? `Request failed (${res.status})`, data?.code, res.status)
+  }
   return data as T
 }
 

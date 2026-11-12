@@ -6,8 +6,10 @@ import {
   type ActivityHit,
   type Article,
   type BriefingResult,
+  type StoredSummary,
   type FeedPage,
   type FeedParams,
+  type SearchProvider,
   type Source,
   type Stats,
   type Story,
@@ -15,6 +17,7 @@ import {
   type Tracker,
   type Trend,
 } from './client.ts'
+import { useLang } from '../i18n/index.ts'
 import { queryClient } from './query.ts'
 
 function feedUrl(params: FeedParams, cursor: string | null, limit: number): string {
@@ -75,7 +78,20 @@ export const useActivityCount = () =>
 export const useArticle = (id: number) =>
   useQuery({
     queryKey: ['article', id],
-    queryFn: () => api<{ article: Article; summary: string[] | null }>(`/api/articles/${id}`),
+    queryFn: () => api<{ article: Article; summary: StoredSummary | null }>(`/api/articles/${id}`),
+  })
+
+export const useProviders = () =>
+  useQuery({ queryKey: ['providers'], queryFn: () => api<SearchProvider[]>('/api/search/providers'), staleTime: Infinity })
+
+/** Results from one outside search; they are stored for the account, so they open in the reader like any story. */
+export const useWebSearch = (provider: string | null, query: string) =>
+  useQuery({
+    queryKey: ['web-search', provider, query],
+    queryFn: () => api<{ items: Article[] }>(`/api/search?provider=${provider}&q=${encodeURIComponent(query)}`),
+    enabled: Boolean(provider && query),
+    staleTime: 5 * 60_000,
+    retry: false,
   })
 
 export const useReader = (id: number) =>
@@ -86,27 +102,31 @@ export const useReader = (id: number) =>
   })
 
 export function useSummary(id: number) {
+  const lang = useLang()
   return useMutation({
-    mutationKey: ['summary', id],
-    mutationFn: () => api<{ bullets: string[] }>(`/api/articles/${id}/summary`, { method: 'POST' }),
+    mutationKey: ['summary', id, lang],
+    mutationFn: () => api<{ bullets: string[] }>(`/api/articles/${id}/summary`, { body: { lang } }),
     onSuccess: ({ bullets }) => {
-      queryClient.setQueryData<{ article: Article; summary: string[] | null }>(['article', id], (current) =>
-        current ? { ...current, summary: bullets } : current,
+      queryClient.setQueryData<{ article: Article; summary: StoredSummary | null }>(['article', id], (current) =>
+        current ? { ...current, summary: { lang, bullets } } : current,
       )
     },
   })
 }
 
-export const useBriefing = () =>
-  useQuery({
-    queryKey: ['briefing', today()],
+/** Today's briefing in the current language, written on first request. */
+export function useBriefing() {
+  const lang = useLang()
+  return useQuery({
+    queryKey: ['briefing', today(), lang],
     queryFn: async () => {
-      const stored = await api<BriefingResult>(`/api/briefing?day=${today()}`)
-      return stored.briefing ? stored : api<BriefingResult>('/api/briefing', { body: { day: today() } })
+      const stored = await api<BriefingResult>(`/api/briefing?day=${today()}&lang=${lang}`)
+      return stored.briefing ? stored : api<BriefingResult>('/api/briefing', { body: { day: today(), lang } })
     },
     staleTime: Infinity,
     retry: false,
   })
+}
 
 export function useRefresh() {
   return useMutation({

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { api, today, type Article } from '../api/client.ts'
 import { queryClient } from '../api/query.ts'
+import { messages } from '../i18n/index.ts'
 import { toast } from './toast.ts'
 
 interface Flags {
@@ -49,7 +50,7 @@ async function send(id: number, change: Partial<Flags>, undo: Partial<Flags>, re
     for (const key of refresh) void queryClient.invalidateQueries({ queryKey: [key] })
   } catch {
     patch(id, undo)
-    toast('That did not save. Check the connection and try again.')
+    toast(messages().common.saveFailed)
   }
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, ExternalLink, Heart, Send, Sparkles, X } from 'lucide-react'
-import type { Article } from '../api/client.ts'
+import type { Article, StoredSummary } from '../api/client.ts'
 import { useArticle, useReader, useSummary } from '../api/hooks.ts'
+import { useLang, useMessages } from '../i18n/index.ts'
 import { dropLeadImage, useKey, useScrollLock } from '../lib/dom.ts'
 import { longDate } from '../lib/format.ts'
 import { useOverlay } from '../lib/overlay.ts'
@@ -14,6 +15,7 @@ export function Reader({ id }: { id: number }) {
   const overlay = useOverlay()
   const { data, isError } = useArticle(id)
   const sheet = useRef<HTMLDivElement>(null)
+  const t = useMessages()
   useScrollLock()
   useKey((event) => {
     if (event.key === 'Escape') overlay.close('read')
@@ -22,17 +24,17 @@ export function Reader({ id }: { id: number }) {
 
   return (
     <div className={s.backdrop} onClick={(event) => event.target === event.currentTarget && overlay.close('read')}>
-      <div className={s.sheet} ref={sheet} role="dialog" aria-modal aria-label={data?.article.title ?? 'Article'} tabIndex={-1}>
+      <div className={s.sheet} ref={sheet} role="dialog" aria-modal aria-label={data?.article.title ?? t.reader.article} tabIndex={-1}>
         {data ? (
           <Body article={data.article} stored={data.summary} onClose={() => overlay.close('read')} />
         ) : (
           <>
             <div className={s.bar}>
-              <button className={ui.iconButton} onClick={() => overlay.close('read')} aria-label="Close">
+              <button className={ui.iconButton} onClick={() => overlay.close('read')} aria-label={t.common.close}>
                 <X size={24} />
               </button>
             </div>
-            {isError ? <Empty title="This story is no longer available" /> : <div className={cx(s.hero, ui.skeleton)} />}
+            {isError ? <Empty title={t.reader.gone} /> : <div className={cx(s.hero, ui.skeleton)} />}
           </>
         )}
       </div>
@@ -40,8 +42,11 @@ export function Reader({ id }: { id: number }) {
   )
 }
 
-function Body({ article: base, stored, onClose }: { article: Article; stored: string[] | null; onClose: () => void }) {
+function Body({ article: base, stored, onClose }: { article: Article; stored: StoredSummary | null; onClose: () => void }) {
   const article = useFlags(base)
+  const t = useMessages()
+  const lang = useLang()
+  const kept = stored?.lang === lang ? stored.bullets : null
   const reader = useReader(article.id)
   const summary = useSummary(article.id)
   const [heroFailed, setHeroFailed] = useState(false)
@@ -56,14 +61,14 @@ function Body({ article: base, stored, onClose }: { article: Article; stored: st
   return (
     <>
       <div className={s.bar}>
-        <button className={ui.iconButton} onClick={onClose} aria-label="Close">
+        <button className={ui.iconButton} onClick={onClose} aria-label={t.common.close}>
           <X size={24} />
         </button>
         <span className={s.barSpace} />
         <button
           className={cx(ui.iconButton, article.liked && s.liked)}
           onClick={() => setLiked(article, !article.liked)}
-          aria-label="Like"
+          aria-label={t.common.like}
           aria-pressed={article.liked}
         >
           <Heart size={22} />
@@ -71,15 +76,15 @@ function Body({ article: base, stored, onClose }: { article: Article; stored: st
         <button
           className={cx(ui.iconButton, article.saved && s.saved)}
           onClick={() => setSaved(article, !article.saved)}
-          aria-label="Save"
+          aria-label={t.common.save}
           aria-pressed={article.saved}
         >
           <Bookmark size={22} />
         </button>
-        <button className={ui.iconButton} onClick={() => void shareArticle(article)} aria-label="Share">
+        <button className={ui.iconButton} onClick={() => void shareArticle(article)} aria-label={t.common.share}>
           <Send size={21} />
         </button>
-        <a className={ui.iconButton} href={article.url} target="_blank" rel="noopener noreferrer" aria-label="Open original">
+        <a className={ui.iconButton} href={article.url} target="_blank" rel="noopener noreferrer" aria-label={t.common.openOriginal}>
           <ExternalLink size={21} />
         </a>
       </div>
@@ -97,11 +102,11 @@ function Body({ article: base, stored, onClose }: { article: Article; stored: st
           <h1 className={s.title}>{article.title}</h1>
           {article.author && <p className={s.author}>{article.author}</p>}
 
-          {stored && !summary.data ? (
-            <Bullets items={stored} />
+          {kept && !summary.data ? (
+            <Bullets items={kept} />
           ) : summary.isIdle ? (
             <button className={cx(ui.button, s.summarize)} onClick={() => summary.mutate()}>
-              <Sparkles size={18} /> Summarize
+              <Sparkles size={18} /> {t.common.summarize}
             </button>
           ) : (
             <SummaryBlock summary={summary} />
@@ -119,7 +124,7 @@ function Body({ article: base, stored, onClose }: { article: Article; stored: st
             <div className={s.fallback}>
               {article.excerpt && <p className={s.prose}>{article.excerpt}</p>}
               <a className={cx(ui.button, ui.primary)} href={article.url} target="_blank" rel="noopener noreferrer">
-                Continue on {article.source.title} <ExternalLink size={16} />
+                {t.reader.continueOn(article.source.title)} <ExternalLink size={16} />
               </a>
             </div>
           )}

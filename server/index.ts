@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { buildApp } from './app.ts'
 import { openDb } from './db.ts'
 import { refreshAll } from './feeds.ts'
-import { seed } from './seed.ts'
 
 if (existsSync('.env')) process.loadEnvFile('.env')
 
@@ -12,7 +11,6 @@ const dataDir = process.env.DATA_DIR ?? 'data'
 mkdirSync(dataDir, { recursive: true })
 
 const db = openDb(join(dataDir, 'pulse.db'))
-seed(db)
 
 const app = buildApp(db, { logger: true })
 

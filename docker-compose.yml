@@ -8,6 +8,20 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      RSSHUB_URL: http://rsshub:1200
+    depends_on:
+      - rsshub
+    restart: unless-stopped
+
+  # Turns Weibo search and Zhihu into feeds. Only Pulse talks to it, so no port is published.
+  rsshub:
+    image: diygod/rsshub:chromium-bundled
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      WEIBO_COOKIES: ${WEIBO_COOKIES:-}
+      ZHIHU_COOKIES: ${ZHIHU_COOKIES:-}
     restart: unless-stopped
 
 volumes:

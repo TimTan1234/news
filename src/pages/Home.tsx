@@ -1,11 +1,15 @@
+import { useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { api } from '../api/client.ts'
+import { api, errorText } from '../api/client.ts'
 import { invalidate, useRefresh, useSources, useTopics } from '../api/hooks.ts'
 import { Feed } from '../components/Feed.tsx'
+import { PostSkeleton } from '../components/Post.tsx'
 import { Wordmark } from '../components/Shell.tsx'
 import { StoriesRail } from '../components/Stories.tsx'
 import { Avatar, Empty, TopBar, cx, ui } from '../components/ui.tsx'
+import { useMessages } from '../i18n/index.ts'
+import { sessionStore } from '../state/session.ts'
 import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
 
@@ -14,6 +18,15 @@ export function Home() {
   const topic = search.get('topic') ?? undefined
   const { data: topics } = useTopics()
   const refresh = useRefresh()
+  const t = useMessages()
+
+  // A new account has sources but no stories; its first visit fetches them.
+  useEffect(() => {
+    const session = sessionStore.get()
+    if (session.status !== 'in' || !session.isNew) return
+    sessionStore.set({ ...session, isNew: false })
+    refresh.mutate()
+  }, [refresh.mutate])
 
   const choose = (slug?: string) => {
     const next = new URLSearchParams(search)
@@ -25,21 +38,21 @@ export function Home() {
 
   const onRefresh = () =>
     refresh.mutate(undefined, {
-      onSuccess: ({ added }) => toast(added ? `${added} new ${added === 1 ? 'story' : 'stories'}` : 'No new stories yet'),
-      onError: (error) => toast(error.message),
+      onSuccess: ({ added }) => toast(added ? t.home.newStories(added) : t.home.noNew),
+      onError: (error) => toast(errorText(error)),
     })
 
   return (
     <div className={p.page}>
       <TopBar title={<Wordmark className={p.mobileOnly} />}>
-        <button className={ui.iconButton} onClick={onRefresh} disabled={refresh.isPending} aria-label="Refresh">
+        <button className={ui.iconButton} onClick={onRefresh} disabled={refresh.isPending} aria-label={t.common.refresh}>
           <RefreshCw size={21} className={cx(refresh.isPending && p.spin)} />
         </button>
       </TopBar>
       <StoriesRail />
-      <div className={p.chips} role="tablist" aria-label="Topics">
+      <div className={p.chips} role="tablist" aria-label={t.home.topics}>
         <button className={cx(ui.chip, !topic && ui.chipActive)} role="tab" aria-selected={!topic} onClick={() => choose()}>
-          For you
+          {t.home.forYou}
         </button>
         {topics?.map((item) => (
           <button
@@ -56,7 +69,7 @@ export function Home() {
       <Feed
         params={{ topic }}
         caughtUp
-        empty={<Empty title="No stories yet">Refresh to pull in the latest, or follow more sources in settings.</Empty>}
+        empty={refresh.isPending ? <PostSkeleton /> : <Empty title={t.home.emptyTitle}>{t.home.emptyBody}</Empty>}
       />
     </div>
   )
@@ -66,6 +79,7 @@ export function SourcePage() {
   const id = Number(useParams().id)
   const { data: sources } = useSources()
   const source = sources?.find((item) => item.id === id)
+  const t = useMessages()
 
   const toggle = async () => {
     if (!source) return
@@ -86,11 +100,11 @@ export function SourcePage() {
             </a>
           </div>
           <button className={cx(ui.button, !source.followed && ui.primary)} onClick={() => void toggle()}>
-            {source.followed ? 'Following' : 'Follow'}
+            {source.followed ? t.common.following : t.common.follow}
           </button>
         </div>
       )}
-      <Feed params={{ source: id }} empty={<Empty title="Nothing from this source yet" />} />
+      <Feed params={{ source: id }} empty={<Empty title={t.home.sourceEmpty} />} />
     </div>
   )
 }
