@@ -29,7 +29,7 @@ function slugify(db: DB, userId: number, name: string): string {
   return slug
 }
 
-function addTopic(db: DB, userId: number, name: string): number {
+export function addTopic(db: DB, userId: number, name: string): number {
   const position = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 FROM topics WHERE user_id = ?').pluck().get(userId) as number
   return Number(
     db
@@ -38,13 +38,36 @@ function addTopic(db: DB, userId: number, name: string): number {
   )
 }
 
+export interface FoundSource {
+  title: string
+  siteUrl: string
+  feedUrl: string
+  icon?: string | null
+}
+
+/** Adds a source to one of the account's topics and fetches it; refuses one the account already has. */
+export async function addSource(db: DB, userId: number, topicId: number, found: FoundSource) {
+  if (db.prepare('SELECT 1 FROM sources WHERE user_id = ? AND feed_url = ?').get(userId, found.feedUrl)) {
+    throw new Failure(409, 'source_exists', 'That source is already in your list')
+  }
+  const id = Number(
+    db
+      .prepare('INSERT INTO sources (user_id, topic_id, title, site_url, feed_url, icon_url) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, topicId, found.title, found.siteUrl, found.feedUrl, found.icon ?? null).lastInsertRowid,
+  )
+  await refreshSource(db, userId, id)
+  return present(db.prepare(`${SOURCE_SELECT} WHERE s.id = ?`).get(id) as SourceRecord)
+}
+
+export const ownsTopic = (db: DB, userId: number, id: number) =>
+  Boolean(db.prepare('SELECT 1 FROM topics WHERE id = ? AND user_id = ?').get(id, userId))
+
 function removeSource(db: DB, id: number): void {
   deleteArticles(db, 'source_id = ?', id)
   db.prepare('DELETE FROM sources WHERE id = ?').run(id)
 }
 
 export function libraryRoutes(app: FastifyInstance, db: DB): void {
-  const ownsTopic = (userId: number, id: number) => Boolean(db.prepare('SELECT 1 FROM topics WHERE id = ? AND user_id = ?').get(id, userId))
   const ownsSource = (userId: number, id: number) =>
     Boolean(db.prepare(`SELECT 1 FROM sources WHERE id = ? AND user_id = ? AND kind = 'feed'`).get(id, userId))
 
@@ -65,7 +88,7 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
 
   app.delete<{ Params: { id: string } }>('/api/topics/:id', (req) => {
     const id = Number(req.params.id)
-    if (!ownsTopic(req.userId, id)) throw new Failure(404, 'not_found', 'Topic not found')
+    if (!ownsTopic(db, req.userId, id)) throw new Failure(404, 'not_found', 'Topic not found')
     db.transaction(() => {
       const sources = db.prepare('SELECT id FROM sources WHERE topic_id = ?').pluck().all(id) as number[]
       sources.forEach((source) => removeSource(db, source))
@@ -84,9 +107,9 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
     '/api/sources',
     async (req) => {
       const { url, search, topicId } = req.body ?? {}
-      if (!topicId || !ownsTopic(req.userId, topicId)) throw new Failure(400, 'topic_required', 'Choose a topic')
+      if (!topicId || !ownsTopic(db, req.userId, topicId)) throw new Failure(400, 'topic_required', 'Choose a topic')
 
-      let found: { title: string; siteUrl: string; feedUrl: string; icon?: string | null }
+      let found: FoundSource
       if (search?.provider && search.query?.trim()) {
         found = followedSearch(search.provider, search.query.trim())
       } else {
@@ -95,17 +118,7 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
         if (!discovered) throw new Failure(422, 'feed_not_found', 'No feed found at that address')
         found = discovered
       }
-
-      if (db.prepare('SELECT 1 FROM sources WHERE user_id = ? AND feed_url = ?').get(req.userId, found.feedUrl)) {
-        throw new Failure(409, 'source_exists', 'That source is already in your list')
-      }
-      const id = Number(
-        db
-          .prepare('INSERT INTO sources (user_id, topic_id, title, site_url, feed_url, icon_url) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(req.userId, topicId, found.title, found.siteUrl, found.feedUrl, found.icon ?? null).lastInsertRowid,
-      )
-      await refreshSource(db, req.userId, id)
-      return present(db.prepare(`${SOURCE_SELECT} WHERE s.id = ?`).get(id) as SourceRecord)
+      return addSource(db, req.userId, topicId, found)
     },
   )
 
@@ -153,7 +166,15 @@ export function libraryRoutes(app: FastifyInstance, db: DB): void {
     const id = Number(
       db.prepare('INSERT INTO trackers (user_id, phrase, created_at) VALUES (?, ?, ?)').run(req.userId, phrase, Date.now()).lastInsertRowid,
     )
-    await searchTracked(db, [{ user_id: req.userId, phrase }])
+    // Most platforms answer in a second or two; one that takes longer finishes behind the response,
+    // and its matches are recorded then.
+    const searching = searchTracked(db, [{ user_id: req.userId, phrase }])
+    const slow = await Promise.race([searching.then(() => false), new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 8000))])
+    if (slow) {
+      void searching
+        .then(() => db.prepare('SELECT 1 FROM trackers WHERE id = ?').get(id) && matchNewTracker(db, id))
+        .catch((error) => app.log.error(error))
+    }
     return { id, hits: matchNewTracker(db, id) }
   })
 

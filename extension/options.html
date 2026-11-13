@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Pulse</h1>
+
+      <section>
+        <h2 data-i18n="pulse"></h2>
+        <p id="paired" class="muted"></p>
+        <form id="pairing">
+          <label>
+            <span data-i18n="address"></span>
+            <input id="address" type="url" required autocomplete="off" spellcheck="false" />
+            <small data-i18n="addressHint"></small>
+          </label>
+          <label>
+            <span data-i18n="key"></span>
+            <input id="key" type="password" required autocomplete="off" spellcheck="false" />
+            <small data-i18n="keyHint"></small>
+          </label>
+          <div class="row">
+            <button class="primary" data-i18n="pair"></button>
+            <button id="unpair" type="button" data-i18n="unpair" hidden></button>
+          </div>
+        </form>
+        <p id="notice" class="error" role="alert"></p>
+      </section>
+
+      <section>
+        <h2 data-i18n="sites"></h2>
+        <p class="muted" data-i18n="sitesHint"></p>
+        <ul id="sites"></ul>
+      </section>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

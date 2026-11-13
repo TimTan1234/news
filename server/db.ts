@@ -114,6 +114,73 @@ CREATE TABLE IF NOT EXISTS briefings (
   PRIMARY KEY (user_id, day)
 );
 
+-- A subject Pulse believes the account cares about, or is trying out. kind says how far it sits from
+-- known tastes (near, lateral, wildcard); state follows what the reader does with its suggestions.
+CREATE TABLE IF NOT EXISTS interests (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  label TEXT NOT NULL COLLATE NOCASE,
+  queries TEXT NOT NULL,
+  topic TEXT,
+  kind TEXT NOT NULL DEFAULT 'near',
+  origin TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'trial',
+  shown INTEGER NOT NULL DEFAULT 0,
+  accepted INTEGER NOT NULL DEFAULT 0,
+  dismissed INTEGER NOT NULL DEFAULT 0,
+  defers INTEGER NOT NULL DEFAULT 0,
+  resume_at INTEGER,
+  last_signal_at INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE (user_id, label)
+);
+
+CREATE TABLE IF NOT EXISTS suggestions (
+  article_id INTEGER PRIMARY KEY REFERENCES articles(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  interest_id INTEGER NOT NULL REFERENCES interests(id),
+  provider TEXT NOT NULL,
+  score REAL NOT NULL,
+  reason TEXT,
+  lang TEXT,
+  created_at INTEGER NOT NULL,
+  outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS suggestions_by_user ON suggestions(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS suggestion_rounds (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  ran_at INTEGER NOT NULL,
+  problem TEXT
+);
+
+CREATE TABLE IF NOT EXISTS connections (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  platform TEXT NOT NULL,
+  account TEXT NOT NULL,
+  credentials TEXT NOT NULL,
+  connected_at INTEGER NOT NULL,
+  synced_at INTEGER,
+  problem TEXT,
+  PRIMARY KEY (user_id, platform)
+);
+
+CREATE TABLE IF NOT EXISTS pairing_keys (
+  key TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS outside_activity (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  platform TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  title TEXT NOT NULL,
+  by TEXT,
+  PRIMARY KEY (user_id, platform, kind, ref)
+);
+
 CREATE TABLE IF NOT EXISTS reading_days (
   user_id INTEGER NOT NULL REFERENCES users(id),
   day TEXT NOT NULL,
@@ -153,7 +220,7 @@ export function deleteArticles(db: DB, where: string, ...params: unknown[]): num
   const ids = db.prepare(`SELECT id FROM articles WHERE ${where}`).pluck().all(...params) as number[]
   if (ids.length === 0) return 0
   const drop = db.transaction(() => {
-    const dependents = ['tracker_hits', 'reader_cache', 'summaries'].map((table) =>
+    const dependents = ['tracker_hits', 'reader_cache', 'summaries', 'suggestions'].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE article_id = ?`),
     )
     const article = db.prepare('DELETE FROM articles WHERE id = ?')

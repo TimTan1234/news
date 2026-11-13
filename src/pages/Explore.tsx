@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { RefreshCw, Search, X } from 'lucide-react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { api, errorText, type Source } from '../api/client.ts'
-import { invalidate, useFeed, useProviders, useSources, useTopics, useTrending, useWebSearch } from '../api/hooks.ts'
+import { invalidate, useFeed, useProviders, useSources, useSuggestions, useTopics, useTrending, useWebSearch } from '../api/hooks.ts'
+import { queryClient } from '../api/query.ts'
 import { TileGrid } from '../components/Feed.tsx'
 import { ArticleRow } from '../components/Row.tsx'
+import { SuggestionCard } from '../components/Suggestion.tsx'
 import { Empty, cx, ui } from '../components/ui.tsx'
-import { useMessages } from '../i18n/index.ts'
+import { messages, useLang, useMessages } from '../i18n/index.ts'
 import { useSideScroll } from '../lib/dom.ts'
 import { toast } from '../state/toast.ts'
 import p from './pages.module.css'
@@ -113,9 +115,47 @@ export function Explore() {
           <Empty title={t.explore.prompt(label(provider.id, provider.name))} />
         )
       ) : (
-        <TileGrid params={q ? { q } : {}} empty={<Empty title={q ? t.explore.noMatch(q) : t.explore.empty} />} />
+        <>
+          {!q && <ForYou />}
+          <TileGrid params={q ? { q } : {}} empty={<Empty title={q ? t.explore.noMatch(q) : t.explore.empty} />} />
+        </>
       )}
     </div>
+  )
+}
+
+/** Stories found for the reader's interests outside their own sources. */
+function ForYou() {
+  const { data } = useSuggestions()
+  const t = useMessages()
+  const lang = useLang()
+  if (!data) return null
+
+  const again = async () => {
+    queryClient.setQueryData(['suggestions'], { ...data, running: true })
+    await api('/api/suggestions/round', { body: { lang } }).catch((error) => toast(errorText(error)))
+    invalidate('suggestions')
+  }
+
+  return (
+    <section className={p.forYou}>
+      <header className={p.forYouHead}>
+        <h2>{t.suggest.title}</h2>
+        <button className={ui.iconButton} onClick={() => void again()} disabled={data.running} aria-label={t.suggest.refresh}>
+          <RefreshCw size={20} className={cx(data.running && p.spin)} />
+        </button>
+      </header>
+      {data.problem && !data.running && <p className={ui.error}>{messages().errors[data.problem] ?? messages().errors.fallback}</p>}
+      {data.items.length > 0 ? (
+        <div className={p.suggestions}>
+          {data.items.map((item) => (
+            <SuggestionCard key={item.article.id} item={item} />
+          ))}
+        </div>
+      ) : (
+        <p className={p.muted}>{data.running ? t.suggest.finding : t.suggest.empty}</p>
+      )}
+    </section>
   )
 }
 

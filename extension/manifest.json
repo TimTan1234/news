@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_name__",
+  "description": "__MSG_description__",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "minimum_chrome_version": "111",
+  "icons": {
+    "192": "icon.png"
+  },
+  "action": {
+    "default_title": "__MSG_name__"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://www.xiaohongshu.com/*",
+    "https://www.rednote.com/*",
+    "https://www.douyin.com/*",
+    "https://www.zhihu.com/*",
+    "https://www.tiktok.com/*",
+    "https://www.instagram.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
+}

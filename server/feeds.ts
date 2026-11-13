@@ -2,7 +2,7 @@ import Parser from 'rss-parser'
 import { decodeHTML } from 'entities'
 import { deleteArticles, type DB } from './db.ts'
 import { attributes, fetchHtml, pool, readText, request } from './http.ts'
-import { parseSearchUrl, searchEntries, searchTracked } from './search.ts'
+import { parseSearchUrl, searchDue, searchEntries, searchTracked } from './search.ts'
 import { matchNewArticles } from './trackers.ts'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -171,18 +171,24 @@ export interface SourceRow {
   feed_url: string
   etag: string | null
   last_modified: string | null
+  fetched_at: number | null
 }
 
 /** Followed sources in ingest order: within an account, a story carried by two feeds stays with the earlier one. */
 function followedSources(db: DB, userId?: number): SourceRow[] {
   return db
     .prepare(
-      `SELECT s.id, s.user_id, s.site_url, s.feed_url, s.etag, s.last_modified
+      `SELECT s.id, s.user_id, s.site_url, s.feed_url, s.etag, s.last_modified, s.fetched_at
        FROM sources s LEFT JOIN topics t ON t.id = s.topic_id
        WHERE s.followed = 1 AND (? IS NULL OR s.user_id = ?)
        ORDER BY s.user_id, t.position, s.id`,
     )
     .all(userId ?? null, userId ?? null) as SourceRow[]
+}
+
+function dueSources(db: DB, userId?: number): SourceRow[] {
+  const now = Date.now()
+  return followedSources(db, userId).filter((source) => searchDue(source.feed_url, source.fetched_at, now))
 }
 
 export function ingest(db: DB, source: Pick<SourceRow, 'id' | 'user_id'>, entries: Entry[], now = Date.now()): number[] {
@@ -250,10 +256,26 @@ function metaImage(html: string, base: string): string | null {
   return fallback
 }
 
-async function fillMissingImages(db: DB): Promise<void> {
+/**
+ * Looks up a picture for stories that came without one. Left to itself it covers what will be shown:
+ * stories from the accounts' own sources, suggestions and keyword matches, not every stored search result.
+ */
+export async function fillMissingImages(db: DB, only: { sourceId?: number; articleIds?: number[] } = {}): Promise<void> {
+  const params = only.articleIds ?? (only.sourceId === undefined ? [] : [only.sourceId])
+  const scope = only.articleIds
+    ? `a.id IN (${only.articleIds.map(() => '?').join(', ') || 'NULL'})`
+    : only.sourceId !== undefined
+      ? 'a.source_id = ?'
+      : `(s.kind = 'feed'
+          OR EXISTS (SELECT 1 FROM suggestions g WHERE g.article_id = a.id)
+          OR EXISTS (SELECT 1 FROM tracker_hits h WHERE h.article_id = a.id))`
   const pending = db
-    .prepare('SELECT id, url FROM articles WHERE image_url IS NULL AND image_checked = 0 ORDER BY published_at DESC LIMIT 40')
-    .all() as { id: number; url: string }[]
+    .prepare(
+      `SELECT a.id, a.url FROM articles a JOIN sources s ON s.id = a.source_id
+       WHERE a.image_url IS NULL AND a.image_checked = 0 AND ${scope}
+       ORDER BY a.published_at DESC LIMIT 40`,
+    )
+    .all(...params) as { id: number; url: string }[]
   const store = db.prepare('UPDATE articles SET image_url = ?, image_checked = 1 WHERE id = ?')
   await pool(pending, 5, async ({ id, url }) => {
     const html = await fetchHtml(url, { timeoutMs: 8_000, maxBytes: 300_000 }).catch(() => null)
@@ -303,7 +325,7 @@ type Tracked = { user_id: number; phrase: string }
 
 export function refreshAll(db: DB): Promise<RefreshResult> {
   const trackers = db.prepare('SELECT user_id, phrase FROM trackers').all() as Tracked[]
-  running ??= refresh(db, followedSources(db), trackers).finally(() => {
+  running ??= refresh(db, dueSources(db), trackers).finally(() => {
     running = null
   })
   return running
@@ -311,14 +333,14 @@ export function refreshAll(db: DB): Promise<RefreshResult> {
 
 export function refreshUser(db: DB, userId: number): Promise<RefreshResult> {
   const trackers = db.prepare('SELECT user_id, phrase FROM trackers WHERE user_id = ?').all(userId) as Tracked[]
-  return refresh(db, followedSources(db, userId), trackers)
+  return refresh(db, dueSources(db, userId), trackers)
 }
 
 export function refreshSource(db: DB, userId: number, sourceId: number): Promise<RefreshResult> {
-  return refresh(db, followedSources(db, userId).filter((source) => source.id === sourceId))
+  return refresh(db, followedSources(db, userId).filter((source) => source.id === sourceId), [], { sourceId })
 }
 
-async function refresh(db: DB, sources: SourceRow[], trackers: Tracked[] = []): Promise<RefreshResult> {
+async function refresh(db: DB, sources: SourceRow[], trackers: Tracked[] = [], images: { sourceId?: number } = {}): Promise<RefreshResult> {
   const now = Date.now()
   const [fetched, tracked] = await Promise.all([
     pool(sources, 6, (source) => fetchSource(source, now)),
@@ -342,7 +364,7 @@ async function refresh(db: DB, sources: SourceRow[], trackers: Tracked[] = []): 
     }
   })
   matchNewArticles(db, added, now)
-  await Promise.all([fillMissingImages(db), fillMissingIcons(db)])
+  await Promise.all([fillMissingImages(db, images), fillMissingIcons(db)])
   prune(db, now)
   return { added: added.length, failed }
 }

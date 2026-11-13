@@ -92,6 +92,7 @@
 
 .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -241,6 +242,27 @@
 .scopeOn {
   border-bottom-color: var(--ink);
   color: var(--ink);
+}
+
+.forYou {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+}
+
+.forYouHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.forYouHead h2 {
+  font-size: var(--text-2xl);
+}
+
+.suggestions {
+  display: grid;
+  align-items: start;
 }
 
 .followBar {
@@ -501,6 +523,63 @@
   color: var(--ink);
 }
 
+.settingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+
+.settingName {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.interestOff {
+  color: var(--ink-faint);
+}
+
+.scan {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+
+.accountName {
+  flex: 1 0 auto;
+  font-weight: 500;
+}
+
+.accountState {
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signInCode {
+  font-size: var(--text-2xl);
+  letter-spacing: 0.08em;
+}
+
+.scan a {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.scan img {
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--on-media);
+}
+
 .topicGroup {
   padding-top: var(--space-3);
 }
@@ -583,6 +662,7 @@
   .chips,
   .searchBar,
   .scopes,
+  .forYou,
   .followBar,
   .results {
     padding-left: 0;
@@ -608,7 +688,8 @@
     display: none;
   }
 
-  .results {
+  .results,
+  .suggestions {
     grid-template-columns: 1fr 1fr;
     column-gap: var(--space-6);
   }

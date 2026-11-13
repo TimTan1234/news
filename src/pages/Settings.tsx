@@ -1,8 +1,8 @@
-import { useRef, useState, type FormEvent } from 'react'
-import { Download, LogOut, Moon, Sun, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Ban, Download, LogOut, Moon, RotateCcw, Sun, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { api, errorText, type Source, type Topic } from '../api/client.ts'
-import { invalidate, useProviders, useSources, useTopics } from '../api/hooks.ts'
+import { api, errorText, type Account, type AccountLogin, type ActivityKind, type LoginCode, type Source, type Topic } from '../api/client.ts'
+import { invalidate, useAccounts, useConnection, useInterests, usePairingKey, useProviders, useSources, useTopics } from '../api/hooks.ts'
 import { Avatar, TopBar, cx, ui } from '../components/ui.tsx'
 import { setLang, useLang, useMessages, type Lang } from '../i18n/index.ts'
 import { sessionStore, signOut } from '../state/session.ts'
@@ -143,6 +143,287 @@ function AddTopic() {
   )
 }
 
+/** The subjects suggestions are drawn from, each of which can be stopped or brought back. */
+function Interests() {
+  const { data: interests } = useInterests()
+  const t = useMessages()
+
+  const set = async (id: number, avoided: boolean) => {
+    try {
+      await api(`/api/interests/${id}`, { method: 'PATCH', body: { avoided } })
+      invalidate('interests', 'suggestions')
+    } catch (error) {
+      toast(errorText(error))
+    }
+  }
+
+  return (
+    <section className={p.block}>
+      <h2 className={p.groupTitle}>{t.interests.title}</h2>
+      <p className={p.muted}>{interests?.length === 0 ? t.interests.empty : t.interests.hint}</p>
+      {!!interests?.length && (
+        <ul>
+          {interests.map((interest) => {
+            const stopped = interest.state === 'avoided'
+            return (
+              <li key={interest.id} className={p.settingRow}>
+                <span className={cx(p.settingName, stopped && p.interestOff)}>{interest.label}</span>
+                <span className={p.muted}>{t.interests.states[interest.state]}</span>
+                <button
+                  className={ui.iconButton}
+                  onClick={() => void set(interest.id, !stopped)}
+                  aria-label={stopped ? t.interests.restore(interest.label) : t.interests.stop(interest.label)}
+                >
+                  {stopped ? <RotateCcw size={18} /> : <Ban size={18} />}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const KINDS: ActivityKind[] = ['watched', 'liked', 'saved', 'followed']
+
+/** One of the reader's own accounts elsewhere: its state, what was read from it, and the sign-in that connects it. */
+function AccountRow({ account }: { account: Account }) {
+  const [login, setLogin] = useState<AccountLogin | null>(null)
+  const [busy, setBusy] = useState(false)
+  const lang = useLang()
+  const t = useMessages()
+  const { platform, name } = account
+
+  // While a sign-in is open, ask whether it has landed: one question at a time, until it has or its time is up.
+  useEffect(() => {
+    if (!login) return
+    let over = false
+    let timer: ReturnType<typeof setTimeout>
+    const until = Date.now() + login.lasts
+    const close = (message: string) => {
+      setLogin(null)
+      toast(message)
+    }
+    const ask = async () => {
+      if (Date.now() > until) return close(t.connections.expired)
+      try {
+        const { state } = await api<{ state: string }>(`/api/accounts/${platform}/login/check`, { body: { lang } })
+        if (over) return
+        if (state === 'waiting') timer = setTimeout(() => void ask(), login.every)
+        else if (state === 'connected') {
+          close(t.connections.learning(name))
+          invalidate('accounts', 'suggestions', 'interests')
+        } else close(t.connections.expired)
+      } catch (error) {
+        if (!over) close(errorText(error))
+      }
+    }
+    timer = setTimeout(() => void ask(), login.every)
+    return () => {
+      over = true
+      clearTimeout(timer)
+    }
+  }, [login, platform, name, lang, t])
+
+  const connect = async () => {
+    setBusy(true)
+    try {
+      setLogin(await api<AccountLogin>(`/api/accounts/${platform}/login`, { method: 'POST' }))
+    } catch (error) {
+      toast(errorText(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const disconnect = async () => {
+    if (!confirm(t.connections.disconnectAccount(name))) return
+    try {
+      await api(`/api/accounts/${platform}`, { method: 'DELETE' })
+      invalidate('accounts')
+    } catch (error) {
+      toast(errorText(error))
+    }
+  }
+
+  const read = KINDS.flatMap((kind) => (account.activity[kind] ? t.connections.kinds[kind](account.activity[kind]) : []))
+
+  return (
+    <div className={p.field}>
+      <div className={p.settingRow}>
+        <span className={p.accountName}>{name}</span>
+        <span className={p.accountState}>{account.connected ? account.account : t.connections.off}</span>
+        {account.connected || account.via === 'extension' ? (
+          <button className={ui.button} onClick={() => void disconnect()}>
+            {t.connections.disconnect}
+          </button>
+        ) : (
+          <button className={cx(ui.button, ui.primary)} disabled={busy} onClick={() => void connect()}>
+            {t.connections.connect}
+          </button>
+        )}
+      </div>
+      <small>{read.length ? t.connections.read(read) : t.connections.uses[platform]}</small>
+      {account.problem && <p className={ui.error}>{t.errors[account.problem] ?? t.errors.fallback}</p>}
+      {login?.image && (
+        <figure className={p.scan}>
+          <img src={login.image} alt={t.connections.code} width={200} height={200} />
+          <figcaption className={p.muted}>{t.connections.scanWith(name)}</figcaption>
+        </figure>
+      )}
+      {login?.code && (
+        <div className={p.scan}>
+          <span className={p.muted}>{t.connections.enterCode}</span>
+          <a href={login.url} target="_blank" rel="noreferrer">
+            {login.url?.replace(/^https?:\/\//, '')}
+          </a>
+          <strong className={p.signInCode}>{login.code}</strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The Xiaohongshu login every account's searches run through: its state, a QR code to sign in with, and signing out. */
+function Xiaohongshu() {
+  const [code, setCode] = useState<LoginCode | null>(null)
+  const [busy, setBusy] = useState(false)
+  const { data: connection } = useConnection(code !== null)
+  const t = useMessages()
+  const connected = connection?.connected ?? false
+  const name = t.connections.xiaohongshu
+
+  // The code is put away when the scan lands, or when the service stops waiting for it.
+  useEffect(() => {
+    if (!code) return
+    if (connected) {
+      setCode(null)
+      toast(t.connections.done)
+      invalidate('providers')
+      return
+    }
+    const timer = setTimeout(() => {
+      setCode(null)
+      toast(t.connections.expired)
+    }, code.lasts)
+    return () => clearTimeout(timer)
+  }, [code, connected, t])
+
+  if (!connection?.configured) return null
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await action()
+      invalidate('connection', 'providers')
+    } catch (error) {
+      toast(errorText(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const connect = () =>
+    run(async () => {
+      const started = await api<{ code: LoginCode | null }>('/api/connections/xiaohongshu/login', { method: 'POST' })
+      setCode(started.code)
+      if (!started.code) toast(t.connections.done)
+    })
+  const disconnect = () => {
+    if (!confirm(t.connections.disconnectConfirm)) return
+    void run(async () => {
+      await api('/api/connections/xiaohongshu', { method: 'DELETE' })
+      setCode(null)
+    })
+  }
+
+  return (
+    <div className={p.field}>
+      <div className={p.settingRow}>
+        <span className={p.accountName}>{t.connections.xiaohongshuSearch}</span>
+        {!connection.challenged && <span className={p.accountState}>{connected ? t.connections.connected(connection.account) : t.connections.off}</span>}
+        {!connected && (
+          <button className={cx(ui.button, ui.primary)} disabled={busy} onClick={() => void connect()}>
+            {t.connections.connect}
+          </button>
+        )}
+        {(connected || connection.challenged) && (
+          <button className={ui.button} disabled={busy} onClick={disconnect}>
+            {t.connections.disconnect}
+          </button>
+        )}
+      </div>
+      <small>{t.connections.hint}</small>
+      {connection.challenged && <p className={ui.error}>{t.connections.challenged}</p>}
+      {code && (
+        <figure className={p.scan}>
+          <img src={code.image} alt={t.connections.code} width={200} height={200} />
+          <figcaption className={p.muted}>{t.connections.scanWith(name)}</figcaption>
+        </figure>
+      )}
+    </div>
+  )
+}
+
+/** The key the reader pastes into their browser extension, which then sends what it reads from their accounts. */
+function Extension() {
+  const { data } = usePairingKey()
+  const field = useRef<HTMLInputElement>(null)
+  const t = useMessages()
+  const key = data?.key
+
+  const create = async () => {
+    if (key && !confirm(t.connections.newKeyConfirm)) return
+    try {
+      await api('/api/extension/key', { method: 'POST' })
+      invalidate('pairing-key')
+    } catch (error) {
+      toast(errorText(error))
+    }
+  }
+  // The clipboard is only offered on a secure address; elsewhere the browser's own copy of the selection still works.
+  const copy = async () => {
+    if (!key) return
+    field.current?.select()
+    if (navigator.clipboard) await navigator.clipboard.writeText(key).catch(() => {})
+    else document.execCommand('copy')
+    toast(t.connections.copied)
+  }
+
+  return (
+    <div className={p.field}>
+      <div className={p.settingRow}>
+        <span className={p.accountName}>{t.connections.extension}</span>
+        <button className={cx(ui.button, !key && ui.primary)} onClick={() => void create()}>
+          {key ? t.connections.newKey : t.connections.createKey}
+        </button>
+      </div>
+      <small>{t.connections.extensionHint}</small>
+      {key && (
+        <div className={p.inlineForm}>
+          <input ref={field} className={ui.input} value={key} readOnly aria-label={t.connections.pairingKey} onFocus={(event) => event.target.select()} />
+          <button className={ui.button} onClick={() => void copy()}>
+            {t.connections.copy}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Connections() {
+  const { data: accounts } = useAccounts()
+  const session = useStore(sessionStore)
+  const t = useMessages()
+  return (
+    <section className={p.block}>
+      <h2 className={p.groupTitle}>{t.connections.title}</h2>
+      {accounts?.map((account) => <AccountRow key={account.platform} account={account} />)}
+      <Extension />
+      {session.user?.admin && <Xiaohongshu />}
+    </section>
+  )
+}
+
 function Backup() {
   const file = useRef<HTMLInputElement>(null)
   const t = useMessages()
@@ -211,6 +492,8 @@ export function Settings() {
         <TrackerChips />
       </section>
 
+      <Interests />
+
       <section className={p.block}>
         <h2 className={p.groupTitle}>{t.settings.sources}</h2>
         {topics && <AddSource topics={topics} />}
@@ -229,6 +512,8 @@ export function Settings() {
         ))}
         <AddTopic />
       </section>
+
+      <Connections />
 
       <section className={p.block}>
         <h2 className={p.groupTitle}>{t.settings.backup}</h2>

@@ -12,11 +12,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
     "@fastify/static": "^10.1.10",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^13.1.1",
     "entities": "^9.0.0",
     "fastify": "^5.12.8",
     "linkedom": "^0.18.15",
+    "qrcode": "^1.5.4",
     "rss-parser": "^3.13.0",
     "sanitize-html": "^2.18.2",
     "tsx": "^4.23.15"
@@ -26,6 +28,7 @@
     "@tanstack/react-query": "^5.107.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/sanitize-html": "^2.16.2",

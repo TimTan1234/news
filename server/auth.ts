@@ -23,6 +23,25 @@ export function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(scryptSync(password, salt, hash.length), hash)
 }
 
+/** The account that looks after what the whole instance shares: the one named in ADMIN_USER, otherwise the first one created. */
+export function isAdmin(db: DB, userId: number): boolean {
+  const named = process.env.ADMIN_USER?.trim()
+  const admin = named ? db.prepare('SELECT id FROM users WHERE username = ?').pluck().get(named) : db.prepare('SELECT MIN(id) FROM users').pluck().get()
+  return admin === userId
+}
+
+/** The key a reader's browser extension presents in place of a session; it opens the extension's routes and nothing else. */
+export const pairingKey = (db: DB, userId: number) => db.prepare('SELECT key FROM pairing_keys WHERE user_id = ?').pluck().get(userId) as string | undefined
+
+export function newPairingKey(db: DB, userId: number): string {
+  const key = randomBytes(24).toString('hex')
+  db.prepare(
+    `INSERT INTO pairing_keys (key, user_id, created_at) VALUES (?, ?, ?)
+     ON CONFLICT (user_id) DO UPDATE SET key = excluded.key, created_at = excluded.created_at`,
+  ).run(key, userId, Date.now())
+  return key
+}
+
 function sessionToken(req: FastifyRequest): string | undefined {
   for (const pair of (req.headers.cookie ?? '').split(';')) {
     const [name, value] = pair.trim().split('=')
@@ -50,6 +69,13 @@ export function authRoutes(app: FastifyInstance, db: DB): void {
 
   app.addHook('preHandler', async (req) => {
     if (!req.url.startsWith('/api/') || req.url.startsWith('/api/auth/')) return
+    const presented = req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1]
+    if (presented && req.url.startsWith('/api/extension/')) {
+      const owner = db.prepare('SELECT user_id FROM pairing_keys WHERE key = ?').pluck().get(presented) as number | undefined
+      if (!owner) throw new Failure(401, 'key_rejected', 'That pairing key is not valid')
+      req.userId = owner
+      return
+    }
     const token = sessionToken(req)
     const session =
       token &&
@@ -77,7 +103,7 @@ export function authRoutes(app: FastifyInstance, db: DB): void {
     )
     seedUser(db, id, req.body?.lang === 'zh' ? 'zh' : 'en')
     startSession(db, req, reply, id)
-    return { user: { id, username } }
+    return { user: { id, username, admin: isAdmin(db, id) } }
   })
 
   app.post<{ Body: { username?: string; password?: string } }>('/api/auth/login', (req, reply) => {
@@ -89,7 +115,7 @@ export function authRoutes(app: FastifyInstance, db: DB): void {
       throw new Failure(401, 'invalid_credentials', 'That username and password do not match')
     }
     startSession(db, req, reply, user.id)
-    return { user: { id: user.id, username: user.username } }
+    return { user: { id: user.id, username: user.username, admin: isAdmin(db, user.id) } }
   })
 
   app.post('/api/auth/logout', (req, reply) => {
@@ -109,6 +135,6 @@ export function authRoutes(app: FastifyInstance, db: DB): void {
            WHERE s.token = ? AND s.created_at >= ?`,
         )
         .get(token, Date.now() - SESSION_DAYS * 86_400_000) as { id: number; username: string } | undefined)
-    return { user: user || null }
+    return { user: user ? { ...user, admin: isAdmin(db, user.id) } : null }
   })
 }

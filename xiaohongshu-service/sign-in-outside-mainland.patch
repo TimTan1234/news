@@ -1,0 +1,240 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: hz-xiaxz <1806656034@qq.com>
+Date: Tue, 3 Nov 2026 13:57:20 -0500
+Subject: [PATCH] fix(login): log in and check login state on a page that is
+ not redirected to rednote
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+From overseas IPs www.xiaohongshu.com/explore (and /explore/<id>,
+/user/profile/...) now 302 to www.rednote.com, which has its own login
+state. The QR login window therefore logged into rednote (shown as an
+"unknown" device in the app's device list, while xiaohongshu web logins
+show as Windows 10), and the status check on /explore always saw a
+guest. Repeated attempts then hit the web device limit
+("电脑设备登录超限").
+
+Login, FetchQrcodeImage, CheckLoginStatus and WaitForLogin now use the
+search result page, which is not redirected and shows the xiaohongshu
+QR modal to guests, and read __INITIAL_STATE__.user (loggedIn /
+userInfo.guest) instead of the /explore sidebar, keeping the sidebar
+selector as a fallback. Login no longer panics via MustElement when the
+page goes away, and FetchQrcodeImage returns the navigation error instead of
+panicking (TestLoginQrcodeClosesBrowserOnNavigationPanic → ...Failure: it
+now asserts an error and still checks that the browser profile is gone).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ login_qrcode_integration_test.go            |  6 +-
+ xiaohongshu/login.go                        | 87 +++++++++++++--------
+ xiaohongshu/login_state_integration_test.go | 44 +++++++++++
+ 3 files changed, 104 insertions(+), 33 deletions(-)
+ create mode 100644 xiaohongshu/login_state_integration_test.go
+
+diff --git a/login_qrcode_integration_test.go b/login_qrcode_integration_test.go
+index f8eb690..8fac1c0 100644
+--- a/login_qrcode_integration_test.go
++++ b/login_qrcode_integration_test.go
+@@ -18,7 +18,8 @@ import (
+ 	"github.com/xpzouying/xiaohongshu-mcp/configs"
+ )
+ 
+-func TestLoginQrcodeClosesBrowserOnNavigationPanic(t *testing.T) {
++// 导航失败时取码返回错误（不再 panic），浏览器同样要被关闭。
++func TestLoginQrcodeClosesBrowserOnNavigationFailure(t *testing.T) {
+ 	// 首次下载浏览器的时间不计入取码超时。
+ 	_, err := browser.EnsureBrowser()
+ 	require.NoError(t, err)
+@@ -44,7 +45,8 @@ func TestLoginQrcodeClosesBrowserOnNavigationPanic(t *testing.T) {
+ 
+ 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+ 	defer cancel()
+-	require.Panics(t, func() { NewXiaohongshuService().GetLoginQrcode(ctx) })
++	require.NotPanics(t, func() { _, err = NewXiaohongshuService().GetLoginQrcode(ctx) })
++	require.Error(t, err)
+ 	require.True(t, sawNavigation.Load())
+ 	// rod 在浏览器退出后才删除 profile。
+ 	_, err = os.Lstat(profileDir)
+diff --git a/xiaohongshu/login.go b/xiaohongshu/login.go
+index 67e002d..7ea186f 100644
+--- a/xiaohongshu/login.go
++++ b/xiaohongshu/login.go
+@@ -17,23 +17,57 @@ func NewLogin(page *rod.Page) *LoginAction {
+ 	return &LoginAction{page: page}
+ }
+ 
++// loginPageURL 登录与查登录态都用的页面。
++//
++// 不能用 /explore：海外 IP 访问 www.xiaohongshu.com/explore（以及 /explore/<id>、/user/profile/...）
++// 会被 302 到 www.rednote.com，那边是另一套登录态，cookies 里的小红书会话在那儿不算登录，
++// 扫码也会登进 rednote（设备管理里显示为「未知」设备）。搜索结果页不会被重定向，
++// 未登录时同样弹出小红书的扫码框。
++const loginPageURL = "https://www.xiaohongshu.com/search_result?keyword=%E5%B0%8F%E7%BA%A2%E4%B9%A6&source=web_explore_feed"
++
++const loggedInSelector = ".main-container .user .link-wrapper .channel"
++
++// loggedInJS 读页面自己的登录态；侧栏「我」的入口在部分页面上不存在，只作兜底。
++const loggedInJS = `(selector) => {
++	const unwrap = v => v?.value !== undefined ? v.value : (v?._value !== undefined ? v._value : v);
++	const user = window.__INITIAL_STATE__?.user;
++	const info = unwrap(user?.userInfo);
++	return unwrap(user?.loggedIn) === true || !!(info && !info.guest && (info.userId || info.user_id)) ||
++		!!document.querySelector(selector);
++}`
++
++// isLoggedIn 页面正在跳转或尚未注水时读不到，按未登录处理，由调用方继续轮询。
++func isLoggedIn(page *rod.Page) bool {
++	res, err := page.Eval(loggedInJS, loggedInSelector)
++	return err == nil && res.Value.Bool()
++}
++
++// openLoginPage 打开 loginPageURL，并等页面状态注水（最多 hydrate），期间已登录就提前返回 true。
++func openLoginPage(page *rod.Page, hydrate time.Duration) (bool, error) {
++	if err := page.Navigate(loginPageURL); err != nil {
++		return false, errors.Wrap(err, "open login page failed")
++	}
++	deadline := time.Now().Add(hydrate)
++	for time.Now().Before(deadline) {
++		if isLoggedIn(page) {
++			return true, nil
++		}
++		if err := page.GetContext().Err(); err != nil {
++			return false, err
++		}
++		time.Sleep(300 * time.Millisecond)
++	}
++	return false, nil
++}
++
+ func (a *LoginAction) CheckLoginStatus(ctx context.Context) (bool, error) {
+ 	// 加超时保护：只是查登录态的快速检查，不应无限挂（登录扫码的等待在 Login/WaitForLogin 里）
+ 	pp := a.page.Context(ctx).Timeout(30 * time.Second)
+-	pp.MustNavigate("https://www.xiaohongshu.com/explore").MustWaitLoad()
+-
+-	time.Sleep(1 * time.Second)
+-
+-	exists, _, err := pp.Has(`.main-container .user .link-wrapper .channel`)
++	loggedIn, err := openLoginPage(pp, 5*time.Second)
+ 	if err != nil {
+ 		return false, errors.Wrap(err, "check login status failed")
+ 	}
+-
+-	if !exists {
+-		return false, errors.Wrap(err, "login status element not found")
+-	}
+-
+-	return true, nil
++	return loggedIn, nil
+ }
+ 
+ // CurrentUser 当前登录用户的基础信息。
+@@ -43,7 +77,7 @@ type CurrentUser struct {
+ }
+ 
+ // CurrentUser 从当前页面的 __INITIAL_STATE__ 读取登录用户信息。
+-// 需在 CheckLoginStatus 之后调用：复用已加载的 explore 页，不做额外导航。
++// 需在 CheckLoginStatus 之后调用：复用已加载的 loginPageURL 页，不做额外导航。
+ func (a *LoginAction) CurrentUser(ctx context.Context) (*CurrentUser, error) {
+ 	pp := a.page.Context(ctx).Timeout(10 * time.Second)
+ 
+@@ -73,30 +107,22 @@ func (a *LoginAction) CurrentUser(ctx context.Context) (*CurrentUser, error) {
+ func (a *LoginAction) Login(ctx context.Context) error {
+ 	pp := a.page.Context(ctx)
+ 
+-	// 导航到小红书首页，这会触发二维码弹窗
+-	pp.MustNavigate("https://www.xiaohongshu.com/explore").MustWaitLoad()
+-
+-	time.Sleep(2 * time.Second)
+-
+-	if exists, _, _ := pp.Has(".main-container .user .link-wrapper .channel"); exists {
+-		return nil
++	// 未登录时页面会弹出二维码
++	if loggedIn, err := openLoginPage(pp, 2*time.Second); err != nil || loggedIn {
++		return err
++	}
++	if !a.WaitForLogin(ctx) {
++		return errors.Wrap(ctx.Err(), "wait for login failed")
+ 	}
+-
+-	pp.MustElement(".main-container .user .link-wrapper .channel")
+-
+ 	return nil
+ }
+ 
+ func (a *LoginAction) FetchQrcodeImage(ctx context.Context) (string, bool, error) {
+ 	pp := a.page.Context(ctx)
+ 
+-	// 导航到小红书首页，这会触发二维码弹窗
+-	pp.MustNavigate("https://www.xiaohongshu.com/explore").MustWaitLoad()
+-
+-	time.Sleep(2 * time.Second)
+-
+-	if exists, _, _ := pp.Has(".main-container .user .link-wrapper .channel"); exists {
+-		return "", true, nil
++	// 未登录时页面会弹出二维码
++	if loggedIn, err := openLoginPage(pp, 2*time.Second); err != nil || loggedIn {
++		return "", loggedIn, err
+ 	}
+ 
+ 	src, err := pp.MustElement(".login-container .qrcode-img").Attribute("src")
+@@ -120,8 +146,7 @@ func (a *LoginAction) WaitForLogin(ctx context.Context) bool {
+ 		case <-ctx.Done():
+ 			return false
+ 		case <-ticker.C:
+-			el, err := pp.Element(".main-container .user .link-wrapper .channel")
+-			if err == nil && el != nil {
++			if isLoggedIn(pp) {
+ 				return true
+ 			}
+ 		}
+diff --git a/xiaohongshu/login_state_integration_test.go b/xiaohongshu/login_state_integration_test.go
+new file mode 100644
+index 0000000..cc30b14
+--- /dev/null
++++ b/xiaohongshu/login_state_integration_test.go
+@@ -0,0 +1,44 @@
++//go:build integration
++
++package xiaohongshu
++
++import (
++	"testing"
++
++	"github.com/go-rod/rod"
++	"github.com/stretchr/testify/require"
++)
++
++// 本地拦截页面，验证 isLoggedIn 按页面自己的登录态判断，不依赖 /explore 的侧栏。
++func TestIsLoggedInReadsPageState(t *testing.T) {
++	b := newSearchFixtureBrowser(t)
++	cases := []struct {
++		name, body string
++		want       bool
++	}{
++		{"logged_in_ref", `<script>window.__INITIAL_STATE__ = {user: {loggedIn: {_value: true}, userInfo: {_value: {guest: false, userId: "u"}}}}</script>`, true},
++		{"logged_in_value", `<script>window.__INITIAL_STATE__ = {user: {loggedIn: {value: true}}}</script>`, true},
++		{"user_info_only", `<script>window.__INITIAL_STATE__ = {user: {loggedIn: {_value: false}, userInfo: {_value: {guest: false, user_id: "u"}}}}</script>`, true},
++		{"guest", `<script>window.__INITIAL_STATE__ = {user: {loggedIn: {_value: false}, userInfo: {_value: {guest: true}}}}</script>`, false},
++		{"no_state", ``, false},
++		{"sidebar", `<div class="main-container"><div class="user"><div class="link-wrapper"><span class="channel">我</span></div></div></div>`, true},
++	}
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			page := b.MustPage()
++			router := page.HijackRequests()
++			router.MustAdd("*", func(h *rod.Hijack) {
++				h.Response.SetHeader("Content-Type", "text/html; charset=utf-8")
++				h.Response.SetBody(`<!doctype html><meta charset="utf-8">` + tc.body)
++			})
++			go router.Run()
++			t.Cleanup(func() {
++				_ = page.Close()
++				_ = router.Stop()
++			})
++			require.NoError(t, page.Navigate(loginPageURL))
++			require.NoError(t, page.WaitLoad())
++			require.Equal(t, tc.want, isLoggedIn(page))
++		})
++	}
++}

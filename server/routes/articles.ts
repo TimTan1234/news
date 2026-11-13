@@ -3,6 +3,7 @@ import { ARTICLE_COLUMNS, ARTICLE_FROM, ARTICLE_SELECT, toArticle, type ArticleR
 import { summarize, type Lang } from '../ai.ts'
 import { Failure } from '../errors.ts'
 import { refreshUser } from '../feeds.ts'
+import { recordOutcome } from '../recommend.ts'
 import { readable } from '../reader.ts'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -167,6 +168,7 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
       db.prepare(`UPDATE articles SET ${column} = ? WHERE id = ? AND user_id = ?`).run(
         on ? Date.now() : null, Number(req.params.id), req.userId,
       )
+      if (on) recordOutcome(db, req.userId, Number(req.params.id), action === 'hide' ? 'dismissed' : 'accepted')
       return { ok: true }
     })
   }
@@ -184,6 +186,7 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
       db.prepare(
         'INSERT INTO reading_days (user_id, day, count) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1',
       ).run(req.userId, day)
+      recordOutcome(db, req.userId, Number(req.params.id), 'accepted', now)
     }
     return { ok: true }
   })

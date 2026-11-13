@@ -3,13 +3,18 @@ import { useInfiniteQuery, useMutation, useQuery, type UseInfiniteQueryResult } 
 import {
   api,
   today,
+  type Account,
   type ActivityHit,
   type Article,
   type BriefingResult,
+  type Connection,
   type StoredSummary,
   type FeedPage,
   type FeedParams,
+  type FollowOptions,
+  type Interest,
   type SearchProvider,
+  type SuggestionList,
   type Source,
   type Stats,
   type Story,
@@ -93,6 +98,34 @@ export const useWebSearch = (provider: string | null, query: string) =>
     staleTime: 5 * 60_000,
     retry: false,
   })
+
+/** Stories found for the account's interests; polls while a round of finding them is under way. */
+export function useSuggestions() {
+  const lang = useLang()
+  return useQuery({
+    queryKey: ['suggestions'],
+    queryFn: () => api<SuggestionList>(`/api/suggestions?lang=${lang}`),
+    refetchInterval: (query) => (query.state.data?.running ? 3000 : false),
+  })
+}
+
+export const useInterests = () => useQuery({ queryKey: ['interests'], queryFn: () => api<Interest[]>('/api/interests') })
+
+/** The shared Xiaohongshu login; asked again every few seconds while a QR code waits to be scanned. */
+export const useConnection = (waiting: boolean) =>
+  useQuery({
+    queryKey: ['connection'],
+    queryFn: () => api<Connection>('/api/connections/xiaohongshu'),
+    refetchInterval: waiting ? 4000 : false,
+  })
+
+export const useAccounts = () => useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
+
+/** The key that pairs the reader's browser extension with their account, once they have made one. */
+export const usePairingKey = () => useQuery({ queryKey: ['pairing-key'], queryFn: () => api<{ key: string | null }>('/api/extension/key') })
+
+export const useFollowOptions = (articleId: number) =>
+  useQuery({ queryKey: ['follow-options', articleId], queryFn: () => api<FollowOptions>(`/api/suggestions/${articleId}/follow`), staleTime: 0 })
 
 export const useReader = (id: number) =>
   useQuery({

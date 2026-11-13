@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { buildApp } from './app.ts'
 import { openDb } from './db.ts'
 import { refreshAll } from './feeds.ts'
+import { findLogin } from './xiaohongshu.ts'
 
 if (existsSync('.env')) process.loadEnvFile('.env')
 
@@ -14,11 +15,13 @@ const db = openDb(join(dataDir, 'pulse.db'))
 
 const app = buildApp(db, { logger: true })
 
-const refresh = () =>
-  refreshAll(db).then(
+const refresh = () => {
+  void findLogin()
+  return refreshAll(db).then(
     ({ added, failed }) => app.log.info({ added, failed }, 'feeds refreshed'),
     (error) => app.log.error(error, 'feed refresh failed'),
   )
+}
 
 await app.listen({ port: Number(process.env.PORT ?? 3000), host: process.env.HOST ?? '0.0.0.0' })
 void refresh()

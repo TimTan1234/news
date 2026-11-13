@@ -1,0 +1,64 @@
+Lets an account sign in on the site it belongs to: XHS_SITE_HOST names the site used for
+sign-in and search, www.xiaohongshu.com unless set. RedNote accounts need www.rednote.com.
+
+diff --git a/xiaohongshu/login.go b/xiaohongshu/login.go
+index 7ea186f..c7a40f3 100644
+--- a/xiaohongshu/login.go
++++ b/xiaohongshu/login.go
+@@ -23,7 +23,7 @@ func NewLogin(page *rod.Page) *LoginAction {
+ // 会被 302 到 www.rednote.com，那边是另一套登录态，cookies 里的小红书会话在那儿不算登录，
+ // 扫码也会登进 rednote（设备管理里显示为「未知」设备）。搜索结果页不会被重定向，
+ // 未登录时同样弹出小红书的扫码框。
+-const loginPageURL = "https://www.xiaohongshu.com/search_result?keyword=%E5%B0%8F%E7%BA%A2%E4%B9%A6&source=web_explore_feed"
++var loginPageURL = "https://" + siteHost() + "/search_result?keyword=%E5%B0%8F%E7%BA%A2%E4%B9%A6&source=web_explore_feed"
+ 
+ const loggedInSelector = ".main-container .user .link-wrapper .channel"
+ 
+diff --git a/xiaohongshu/search.go b/xiaohongshu/search.go
+index 2db9d48..97d8809 100644
+--- a/xiaohongshu/search.go
++++ b/xiaohongshu/search.go
+@@ -321,5 +321,5 @@ func makeSearchURL(keyword string) string {
+ 
+ 	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_search_result_notes
+ 	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_explore_feed
+-	return fmt.Sprintf("https://www.xiaohongshu.com/search_result?%s", values.Encode())
++	return fmt.Sprintf("https://%s/search_result?%s", siteHost(), values.Encode())
+ }
+diff --git a/xiaohongshu/search_ready.go b/xiaohongshu/search_ready.go
+index 3ce22c7..4d98198 100644
+--- a/xiaohongshu/search_ready.go
++++ b/xiaohongshu/search_ready.go
+@@ -98,7 +98,11 @@ func watchSearchResponses(page *rod.Page, keyword string) (<-chan searchResponse
+ 
+ func isSearchNotesURL(raw string) bool {
+ 	u, err := url.Parse(raw)
+-	if err != nil || !strings.HasSuffix(u.Hostname(), ".xiaohongshu.com") {
++	if err != nil {
++		return false
++	}
++	host := u.Hostname()
++	if !strings.HasSuffix(host, ".xiaohongshu.com") && !strings.HasSuffix(host, ".rednote.com") {
+ 		return false
+ 	}
+ 	return u.Path == "/api/sns/web/v1/search/notes" || u.Path == "/api/sns/web/v2/search/notes"
+diff --git a/xiaohongshu/site.go b/xiaohongshu/site.go
+new file mode 100644
+index 0000000..61bd690
+--- /dev/null
++++ b/xiaohongshu/site.go
+@@ -0,0 +1,14 @@
++package xiaohongshu
++
++import "os"
++
++// siteHost 登录和搜索所用的站点域名。
++//
++// 海外手机号注册的账号属于 rednote.com，登录态只在那边有效；
++// 设置 XHS_SITE_HOST=www.rednote.com 即可改用海外站，默认仍是 www.xiaohongshu.com。
++func siteHost() string {
++	if host := os.Getenv("XHS_SITE_HOST"); host != "" {
++		return host
++	}
++	return "www.xiaohongshu.com"
++}

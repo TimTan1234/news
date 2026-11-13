@@ -10,8 +10,10 @@ services:
         required: false
     environment:
       RSSHUB_URL: http://rsshub:1200
+      XHS_MCP_URL: http://xiaohongshu:18060/mcp
     depends_on:
       - rsshub
+      - xiaohongshu
     restart: unless-stopped
 
   # Turns Weibo search and Zhihu into feeds. Only Pulse talks to it, so no port is published.
@@ -24,5 +26,19 @@ services:
       ZHIHU_COOKIES: ${ZHIHU_COOKIES:-}
     restart: unless-stopped
 
+  # Keeps a Xiaohongshu login in a browser of its own and searches with it. Only Pulse talks to it.
+  xiaohongshu:
+    build: ./xiaohongshu-service
+    tty: true
+    environment:
+      XHS_SITE_HOST: ${XHS_SITE_HOST:-www.rednote.com}
+      COOKIES_PATH: /app/data/cookies.json
+      HOME: /app/data/home
+      XDG_CONFIG_HOME: /app/data/config
+    volumes:
+      - xiaohongshu-data:/app/data
+    restart: unless-stopped
+
 volumes:
   pulse-data:
+  xiaohongshu-data:

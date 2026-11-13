@@ -1,0 +1,98 @@
+{
+  "name": {
+    "message": "Pulse"
+  },
+  "description": {
+    "message": "Lets your Pulse learn from what you like and save on other sites, read here in your own browser."
+  },
+  "pulse": {
+    "message": "Your Pulse"
+  },
+  "address": {
+    "message": "Address"
+  },
+  "addressHint": {
+    "message": "Where you open Pulse, such as http://192.168.1.20:3031"
+  },
+  "key": {
+    "message": "Pairing key"
+  },
+  "keyHint": {
+    "message": "From Settings in Pulse, under Connected accounts"
+  },
+  "pair": {
+    "message": "Pair"
+  },
+  "unpair": {
+    "message": "Unpair"
+  },
+  "pairedAs": {
+    "message": "Paired as $1"
+  },
+  "notPaired": {
+    "message": "Not paired"
+  },
+  "sites": {
+    "message": "Sites"
+  },
+  "sitesHint": {
+    "message": "A site you are signed in to in this browser is read every few days. Only titles and authors are sent to your Pulse."
+  },
+  "readNow": {
+    "message": "Read now"
+  },
+  "reading": {
+    "message": "Reading…"
+  },
+  "never": {
+    "message": "Not read yet"
+  },
+  "readOn": {
+    "message": "Read $1"
+  },
+  "saved": {
+    "message": "$1 saved"
+  },
+  "liked": {
+    "message": "$1 liked"
+  },
+  "followed": {
+    "message": "$1 followed"
+  },
+  "watched": {
+    "message": "$1 watched"
+  },
+  "problem_signed_out": {
+    "message": "Not signed in to this site in this browser."
+  },
+  "problem_unreadable": {
+    "message": "The site's pages did not show your lists."
+  },
+  "problem_unpaired": {
+    "message": "Your Pulse turned the key down. Pair again."
+  },
+  "problem_failed": {
+    "message": "That did not work. Try again later."
+  },
+  "pairFailed": {
+    "message": "Could not pair: $1"
+  },
+  "permissionNeeded": {
+    "message": "The extension needs permission to reach that address."
+  },
+  "xiaohongshu": {
+    "message": "Xiaohongshu"
+  },
+  "douyin": {
+    "message": "Douyin"
+  },
+  "zhihu": {
+    "message": "Zhihu"
+  },
+  "tiktok": {
+    "message": "TikTok"
+  },
+  "instagram": {
+    "message": "Instagram"
+  }
+}

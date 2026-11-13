@@ -6,8 +6,10 @@ import { authRoutes } from './auth.ts'
 import type { DB } from './db.ts'
 import { Failure } from './errors.ts'
 import { articleRoutes } from './routes/articles.ts'
+import { connectionRoutes } from './routes/connections.ts'
 import { insightRoutes } from './routes/insights.ts'
 import { libraryRoutes } from './routes/library.ts'
+import { suggestionRoutes } from './routes/suggestions.ts'
 
 interface AppOptions {
   logger?: boolean
@@ -28,6 +30,8 @@ export function buildApp(db: DB, { logger = false, clientDir = resolve('dist') }
   articleRoutes(app, db)
   libraryRoutes(app, db)
   insightRoutes(app, db)
+  suggestionRoutes(app, db)
+  connectionRoutes(app, db)
 
   if (existsSync(clientDir)) {
     app.register(fastifyStatic, { root: clientDir })

@@ -1,0 +1,98 @@
+{
+  "name": {
+    "message": "Pulse"
+  },
+  "description": {
+    "message": "在你自己的浏览器里读取你在其他网站点赞和收藏的内容，让你的 Pulse 更了解你。"
+  },
+  "pulse": {
+    "message": "你的 Pulse"
+  },
+  "address": {
+    "message": "地址"
+  },
+  "addressHint": {
+    "message": "你打开 Pulse 的地址，例如 http://192.168.1.20:3031"
+  },
+  "key": {
+    "message": "配对密钥"
+  },
+  "keyHint": {
+    "message": "在 Pulse 的设置中“已连接的账号”下获取"
+  },
+  "pair": {
+    "message": "配对"
+  },
+  "unpair": {
+    "message": "取消配对"
+  },
+  "pairedAs": {
+    "message": "已配对：$1"
+  },
+  "notPaired": {
+    "message": "未配对"
+  },
+  "sites": {
+    "message": "网站"
+  },
+  "sitesHint": {
+    "message": "在这个浏览器里已登录的网站，每隔几天读取一次。只有标题和作者会发送到你的 Pulse。"
+  },
+  "readNow": {
+    "message": "立即读取"
+  },
+  "reading": {
+    "message": "读取中…"
+  },
+  "never": {
+    "message": "尚未读取"
+  },
+  "readOn": {
+    "message": "读取于 $1"
+  },
+  "saved": {
+    "message": "收藏 $1"
+  },
+  "liked": {
+    "message": "点赞 $1"
+  },
+  "followed": {
+    "message": "关注 $1"
+  },
+  "watched": {
+    "message": "观看 $1"
+  },
+  "problem_signed_out": {
+    "message": "这个浏览器里还没有登录该网站。"
+  },
+  "problem_unreadable": {
+    "message": "网站页面没有显示你的列表。"
+  },
+  "problem_unpaired": {
+    "message": "你的 Pulse 拒绝了这个密钥，请重新配对。"
+  },
+  "problem_failed": {
+    "message": "没有成功，请稍后再试。"
+  },
+  "pairFailed": {
+    "message": "无法配对：$1"
+  },
+  "permissionNeeded": {
+    "message": "扩展需要访问该地址的权限。"
+  },
+  "xiaohongshu": {
+    "message": "小红书"
+  },
+  "douyin": {
+    "message": "抖音"
+  },
+  "zhihu": {
+    "message": "知乎"
+  },
+  "tiktok": {
+    "message": "TikTok"
+  },
+  "instagram": {
+    "message": "Instagram"
+  }
+}

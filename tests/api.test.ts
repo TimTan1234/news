@@ -4,6 +4,7 @@ import { hashPassword } from '../server/auth.ts'
 import { openDb, type DB } from '../server/db.ts'
 import { streak } from '../server/routes/insights.ts'
 import { ftsQuery, searchClause } from '../server/routes/articles.ts'
+import { discover } from '../server/discover.ts'
 import { searchTracked } from '../server/search.ts'
 
 let db: DB
@@ -23,7 +24,10 @@ const call = (method: 'GET' | 'POST' | 'DELETE' | 'PATCH', url: string, cookie: 
 vi.mock('../server/search.ts', async (original) => ({
   ...(await original<typeof import('../server/search.ts')>()),
   searchTracked: vi.fn(async () => ({ added: [], failed: 0 })),
+  searchEntries: vi.fn(async () => []),
+  searchInto: vi.fn(async () => []),
 }))
+vi.mock('../server/discover.ts', () => ({ discover: vi.fn(async () => null) }))
 
 const get = async (url: string, cookie = ana) => (await call('GET', url, cookie)).json()
 const post = async (url: string, payload: object = {}, cookie = ana) => (await call('POST', url, cookie, payload)).json()
@@ -257,6 +261,68 @@ describe('library', () => {
     expect((await get('/api/articles/30')).article.source.managed).toBe(false)
     expect((await call('POST', '/api/sources', ana, { search: { provider: 'nope', query: 'kirby' }, topicId: 2 })).json().code).toBe('search_unavailable')
     expect((await call('POST', '/api/sources', ana, { url: 'https://new.example', topicId: 3 })).json().code).toBe('topic_required')
+  })
+})
+
+describe('suggestions', () => {
+  beforeEach(() => {
+    db.exec(`
+      INSERT INTO sources (id, user_id, kind, title, site_url, feed_url, followed) VALUES (9, 1, 'results', 'News', 'https://www.bing.com/news', 'search:news', 0);
+      INSERT INTO interests (id, user_id, label, queries, topic, kind, origin, state, created_at) VALUES (5, 1, 'Metroid', '["Metroid Prime 4"]', 'Nintendo', 'lateral', 'ai', 'trial', 0);
+      INSERT INTO suggestion_rounds (user_id, ran_at) VALUES (1, ${now}), (2, ${now});
+    `)
+    const add = db.prepare(`INSERT INTO articles (id, user_id, source_id, url, title, publisher, published_at, fetched_at) VALUES (?, 1, 9, ?, ?, 'IGN', ?, ?)`)
+    const suggest = db.prepare(`INSERT INTO suggestions (article_id, user_id, interest_id, provider, score, reason, lang, created_at) VALUES (?, 1, 5, 'news', ?, ?, 'en', ?)`)
+    add.run(40, 'https://ign.example/a', 'Metroid Prime 4 sells out', now, now)
+    add.run(41, 'https://ign.example/b', 'Metroid fan art roundup', now, now)
+    suggest.run(40, 0.9, 'You liked the Prime 4 review.', now)
+    suggest.run(41, 0.5, null, now)
+  })
+
+  it('lists the stories with their subject and reason, to their owner only', async () => {
+    const mine = await get('/api/suggestions?lang=en')
+    expect(mine).toMatchObject({ running: false, ranAt: now, problem: null })
+    expect(mine.items).toMatchObject([
+      { article: { id: 40, source: { title: 'IGN', managed: false } }, provider: 'news', reason: 'You liked the Prime 4 review.', interest: { id: 5, label: 'Metroid', kind: 'lateral' } },
+      { article: { id: 41 }, reason: null },
+    ])
+    expect((await get('/api/suggestions?lang=en', ben)).items).toEqual([])
+  })
+
+  it('counts a like or a read for the subject and a hide against it', async () => {
+    await post('/api/articles/40/like', { on: true })
+    await post('/api/articles/41/hide', { on: true })
+    expect((await get('/api/suggestions')).items.map((item: { article: { id: number } }) => item.article.id)).toEqual([40])
+    expect((await get('/api/interests'))[0]).toMatchObject({ label: 'Metroid', state: 'trial', accepted: 1 })
+    expect(db.prepare('SELECT dismissed FROM interests WHERE id = 5').pluck().get()).toBe(1)
+  })
+
+  it('offers the site feed and a search to follow, and files the choice under a new topic', async () => {
+    vi.mocked(discover).mockResolvedValue({ title: 'IGN', siteUrl: 'https://ign.example', feedUrl: 'https://ign.example/feed' })
+    expect(await get('/api/suggestions/40/follow')).toEqual({
+      subject: 'Metroid',
+      site: { title: 'IGN' },
+      search: { title: 'Metroid Prime 4 (News)' },
+      topicId: null,
+      newTopic: 'Nintendo',
+    })
+    const added = await post('/api/suggestions/40/follow', { what: 'search', newTopic: 'Nintendo' })
+    expect(added).toMatchObject({ title: 'Metroid Prime 4 (News)', feedUrl: 'search:news:Metroid Prime 4' })
+    expect((await get('/api/topics')).map((topic: { name: string }) => topic.name)).toEqual(['AI', 'Games', 'Nintendo'])
+    expect((await get('/api/interests'))[0]).toMatchObject({ state: 'active', accepted: 1 })
+    expect((await get('/api/suggestions/40/follow')).search).toBeNull()
+    expect((await call('POST', '/api/suggestions/40/follow', ana, { what: 'search', topicId: 1 })).json().code).toBe('source_exists')
+    expect((await call('POST', '/api/suggestions/40/follow', ana, { what: 'site', topicId: 3 })).json().code).toBe('topic_required')
+    expect((await call('GET', '/api/suggestions/40/follow', ben)).statusCode).toBe(404)
+  })
+
+  it('stops suggesting an avoided subject and can restore it', async () => {
+    await call('PATCH', '/api/interests/5', ana, { avoided: true })
+    expect((await get('/api/suggestions')).items).toEqual([])
+    expect((await get('/api/interests'))[0].state).toBe('avoided')
+    await call('PATCH', '/api/interests/5', ana, { avoided: false })
+    expect((await get('/api/interests'))[0].state).toBe('trial')
+    expect((await call('PATCH', '/api/interests/5', ben, { avoided: true })).statusCode).toBe(404)
   })
 })
 

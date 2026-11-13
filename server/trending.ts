@@ -56,7 +56,8 @@ function chineseRuns(text: string): string[] {
   return found
 }
 
-function phrases(title: string): Map<string, string> {
+/** The words, word pairs and Chinese runs a title is made of, keyed in lower case. */
+export function phrases(title: string): Map<string, string> {
   const found = new Map<string, string>()
   if (CJK.test(title)) {
     for (const piece of chineseRuns(title)) found.set(piece, piece)

@@ -1,13 +1,20 @@
 const USER_AGENT = 'Mozilla/5.0 (compatible; Pulse/1.0; personal feed reader)'
 
+/** For the sites that only answer what looks like a desktop browser. */
+export const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+
 export interface FetchOptions {
   headers?: Record<string, string>
   timeoutMs?: number
   maxBytes?: number
+  method?: string
+  body?: string
 }
 
-export function request(url: string, { headers = {}, timeoutMs = 15_000 }: FetchOptions = {}): Promise<Response> {
+export function request(url: string, { headers = {}, timeoutMs = 15_000, method, body }: FetchOptions = {}): Promise<Response> {
   return fetch(url, {
+    method,
+    body,
     headers: { 'user-agent': USER_AGENT, ...headers },
     redirect: 'follow',
     signal: AbortSignal.timeout(timeoutMs),
