@@ -32,6 +32,7 @@ export const zh: Messages = {
     unfollow: (source) => `取消关注${source}`,
     unfollowed: (source) => `已取消关注${source}`,
     copyLink: '复制链接',
+    alsoIn: '同时报道',
   },
   feed: { caughtUp: '你已看完全部新内容', loadFailed: '内容加载失败', nothingLoaded: '加载失败' },
   home: {

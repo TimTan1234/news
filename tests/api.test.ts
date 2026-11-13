@@ -163,6 +163,25 @@ describe('feed', () => {
     expect((await get('/api/feed?filter=saved')).items.map((item: { id: number }) => item.id)).toEqual([2])
   })
 
+  it('shows a story once in the home feed, under its first report, with the other sources beside it', async () => {
+    db.exec('INSERT INTO story_articles (article_id, story_id) VALUES (2, 8), (3, 8), (8, 8)')
+    const ids = (page: { items: { id: number }[] }) => page.items.map((item) => item.id)
+    const home = await get('/api/feed')
+    expect(ids(home)).toEqual([1, 4, 6, 5, 7, 8, 9, 10, 11])
+    expect(home.items[5].also.map((other: { id: number; source: { title: string } }) => [other.id, other.source.title])).toEqual([[3, 'Beta']])
+    expect(home.items[0].also).toEqual([])
+
+    expect(ids(await get('/api/feed?topic=games'))).toEqual([1, 3, 5, 7, 9, 11])
+    expect(ids(await get('/api/feed?source=1'))).toEqual([2, 4, 6, 8, 10])
+    expect((await get('/api/feed?source=1')).items[0].also).toBeUndefined()
+
+    await post('/api/articles/seen', { ids: [8] })
+    expect(db.prepare('SELECT id FROM articles WHERE seen_at IS NOT NULL ORDER BY id').pluck().all()).toEqual([2, 3, 8])
+
+    await post('/api/articles/8/hide')
+    expect(ids(await get('/api/feed'))).toEqual([1, 4, 6, 5, 7, 9, 10, 11])
+  })
+
   it('reports how far the reader has already seen', async () => {
     expect((await get('/api/feed')).seenMark).toBeNull()
     await post('/api/articles/seen', { ids: [3, 4] })

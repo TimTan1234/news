@@ -25,6 +25,8 @@ export interface Article {
   hasSummary: boolean
   source: SourceRef
   topic: { slug: string; name: string } | null
+  /** In the home feed, the other sources' reports of the same story. */
+  also?: Article[]
 }
 
 export interface StoredSummary {

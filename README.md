@@ -32,10 +32,10 @@ A database from before accounts existed is kept beside the new one as `pulse-bef
 
 ## What it does
 
-- **Home**: a stories rail with one ring per source, topic filters, and a chronological feed. Double-tap an image to like it, tap to read.
+- **Home**: a stories rail with one ring per source, topic filters, and a chronological feed. A story that several of your sources report appears once, under the first to report it, with the others listed beneath. Double-tap an image to like it, tap to read.
 - **Reader**: the article text extracted in place, with a link to the original.
 - **Explore**: stories suggested for you from outside your own sources, each with the subject it was found for. Below that, search your feed or carry the same search on to the news, Bilibili, Weibo, YouTube, Xiaohongshu, Hacker News and GitHub. Any outside search can be followed, which adds its new results to your feed.
-- **Briefing**: a daily digest of the last 24 hours, written by Claude.
+- **Briefing**: a daily digest of the last 24 hours, written by Claude. It picks events over write-ups: what happened, what is new, and how widely it is reported, leaving out routine updates, promotion, teasers and round-ups.
 - **Activity**: keywords you track, with every story that mentions them, whether it came from your sources or from a news, Bilibili, Weibo or Hacker News search for the keyword.
 - **Profile**: reading streak, weekly and per-topic counts, saved and liked stories.
 - **Settings**: theme, language, interests, sources, topics, connected accounts, OPML import and export, and signing out.
@@ -104,6 +104,10 @@ To connect, sign in as the admin, open Settings, choose **Connect** next to Xiao
 ## AI features
 
 Summaries, the briefing and the written parts of suggestions call the Claude API and need `ANTHROPIC_API_KEY` in `.env`. Both are written in the language the interface is set to. Each summary is stored after the first request, and the briefing is written once per day unless you ask for a new one. The model is set in `server/ai.ts`.
+
+Grouping reports of one story works without a key: titles that share most of their wording and every number are joined. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` add [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). After each refresh, in the background, every new story is compared by meaning with the first report of each story from the last few days, in Chinese and English alike. Where two are close, a model says whether the new one reports the same occurrence, follows it up, comments on it or is something else, and only the same occurrence is joined, so follow-ups and opinion pieces stay posts of their own. A question costs about 9 of Cloudflare's free 10,000 Neurons a day, and accounts that follow the same sources share the answers; when the allowance is used up or Cloudflare is unreachable, titles alone decide until it returns. The models are set in `server/workersai.ts`.
+
+The briefing's selection criteria and the story grouping follow [AIHOT](https://github.com/KKKKhazix/AIHOT)'s scoring rubric and event grouping.
 
 ## Keyboard
 

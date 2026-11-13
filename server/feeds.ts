@@ -3,6 +3,7 @@ import { decodeHTML } from 'entities'
 import { deleteArticles, type DB } from './db.ts'
 import { attributes, fetchHtml, pool, readText, request } from './http.ts'
 import { parseSearchUrl, searchDue, searchEntries, searchTracked } from './search.ts'
+import { groupStories } from './stories.ts'
 import { matchNewArticles } from './trackers.ts'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -364,6 +365,7 @@ async function refresh(db: DB, sources: SourceRow[], trackers: Tracked[] = [], i
     }
   })
   matchNewArticles(db, added, now)
+  void groupStories(db, added, now)
   await Promise.all([fillMissingImages(db, images), fillMissingIcons(db)])
   prune(db, now)
   return { added: added.length, failed }

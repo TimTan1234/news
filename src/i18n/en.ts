@@ -32,6 +32,7 @@ export const en = {
     unfollow: (source: string) => `Unfollow ${source}`,
     unfollowed: (source: string) => `Unfollowed ${source}`,
     copyLink: 'Copy link',
+    alsoIn: 'Also in',
   },
   feed: { caughtUp: "You're all caught up", loadFailed: 'The feed did not load', nothingLoaded: 'Nothing loaded' },
   home: {

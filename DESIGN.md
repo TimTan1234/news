@@ -243,7 +243,7 @@ Quiet by default, inverted for the main action.
 - **900px+:** left rail with the gradient wordmark, icon plus 17px label, active label bold.
 
 ### Post (signature)
-The feed's unit, built like a social post rather than a news card: byline row (avatar, source name at 600, topic and age in faint ink), full-bleed 3:2 media, an action row (like, summarize, save pushed right), then the condensed headline and summary. Double-tapping the media fires a white heart burst (700ms); a like pops the heart into Flare Pink (260ms).
+The feed's unit, built like a social post rather than a news card: byline row (avatar, source name at 600, topic and age in faint ink), full-bleed 3:2 media, an action row (like, summarize, save pushed right), then the condensed headline and summary. When other followed sources report the same story, a last line in label type lists them after "Also in", each a small avatar and name that opens that source's report. Double-tapping the media fires a white heart burst (700ms); a like pops the heart into Flare Pink (260ms).
 
 ### Type Tile (signature)
 When a story has no image, its media slot becomes a gradient tile with the headline set in Poster type, white, bottom-left aligned. The gradient angle is derived from the source id, so each source keeps a recognisable direction while every tile stays in the same two colours. A compact variant (17px, 12px padding) appears in grids.

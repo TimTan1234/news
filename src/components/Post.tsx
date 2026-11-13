@@ -216,6 +216,17 @@ export function PostCard({ article: base }: { article: Article }) {
         )}
         {article.excerpt && <p className={s.excerpt}>{article.excerpt}</p>}
         <SummaryBlock summary={summary} />
+        {article.also && article.also.length > 0 && (
+          <div className={s.also}>
+            <span>{t.post.alsoIn}</span>
+            {article.also.map((other) => (
+              <button key={other.id} onClick={() => overlay.open('read', other.id)} aria-label={t.post.read(other.title)}>
+                <Avatar title={other.source.title} icon={other.source.icon} size={18} />
+                {other.source.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )

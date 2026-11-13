@@ -5,6 +5,7 @@ import { Failure } from '../errors.ts'
 import { refreshUser } from '../feeds.ts'
 import { recordOutcome } from '../recommend.ts'
 import { readable } from '../reader.ts'
+import { alsoReporting, firstReport } from '../stories.ts'
 
 const DAY = 24 * 60 * 60 * 1000
 const STORY_WINDOW = 2 * DAY
@@ -83,6 +84,13 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
       where.push(clause.sql)
       params.push(...clause.params)
     }
+    // The home feed shows a story once, under the source that reported it first; every other view lists each article.
+    const byStory = !filter && q === undefined && !source && !tracker
+    if (byStory) {
+      const first = firstReport({ topic })
+      where.push(first.sql)
+      params.push(...first.params)
+    }
     if (cursor) {
       const [publishedAt, id] = cursor.split('_').map(Number)
       where.push('(a.published_at, a.id) < (?, ?)')
@@ -99,8 +107,9 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
       : (db.prepare('SELECT MAX(published_at) FROM articles WHERE user_id = ? AND seen_at IS NOT NULL').pluck().get(req.userId) as
           | number
           | null)
+    const also = byStory ? alsoReporting(db, page.map((row) => row.id)) : null
     return {
-      items: page.map(toArticle),
+      items: page.map((row) => (also ? { ...toArticle(row), also: also.get(row.id) ?? [] } : toArticle(row))),
       nextCursor: rows.length > limit && last ? `${last.published_at}_${last.id}` : null,
       seenMark,
     }
@@ -192,10 +201,15 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
   })
 
   app.post<{ Body: { ids?: number[] } }>('/api/articles/seen', (req) => {
-    const mark = db.prepare('UPDATE articles SET seen_at = ? WHERE id = ? AND user_id = ? AND seen_at IS NULL')
+    // Seeing one report of a story counts for the others, so their sources' rings do not offer it again.
+    const mark = db.prepare(
+      `UPDATE articles SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL AND (id = ? OR id IN (
+         SELECT theirs.article_id FROM story_articles mine JOIN story_articles theirs ON theirs.story_id = mine.story_id
+         WHERE mine.article_id = ?))`,
+    )
     const now = Date.now()
     db.transaction(() => {
-      for (const id of req.body?.ids ?? []) mark.run(now, Number(id), req.userId)
+      for (const id of req.body?.ids ?? []) mark.run(now, req.userId, Number(id), Number(id))
     })()
     return { ok: true }
   })

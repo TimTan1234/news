@@ -77,6 +77,25 @@ CREATE TRIGGER IF NOT EXISTS articles_fts_delete AFTER DELETE ON articles BEGIN
   INSERT INTO articles_fts(articles_fts, rowid, title, excerpt) VALUES ('delete', old.id, old.title, old.excerpt);
 END;
 
+-- Articles that report the same event share a story_id. vector is the embedding of the title
+-- and excerpt, kept while later reports can still be compared with it.
+CREATE TABLE IF NOT EXISTS story_articles (
+  article_id INTEGER PRIMARY KEY REFERENCES articles(id),
+  story_id INTEGER NOT NULL,
+  vector BLOB
+);
+CREATE INDEX IF NOT EXISTS story_articles_by_story ON story_articles(story_id);
+
+-- What the model said about a pair of reports, by address, so that accounts following the same
+-- sources ask about each pair once.
+CREATE TABLE IF NOT EXISTS story_verdicts (
+  earlier TEXT NOT NULL,
+  later TEXT NOT NULL,
+  same INTEGER NOT NULL,
+  asked_at INTEGER NOT NULL,
+  PRIMARY KEY (earlier, later)
+);
+
 CREATE TABLE IF NOT EXISTS trackers (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -220,7 +239,7 @@ export function deleteArticles(db: DB, where: string, ...params: unknown[]): num
   const ids = db.prepare(`SELECT id FROM articles WHERE ${where}`).pluck().all(...params) as number[]
   if (ids.length === 0) return 0
   const drop = db.transaction(() => {
-    const dependents = ['tracker_hits', 'reader_cache', 'summaries', 'suggestions'].map((table) =>
+    const dependents = ['tracker_hits', 'reader_cache', 'summaries', 'suggestions', 'story_articles'].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE article_id = ?`),
     )
     const article = db.prepare('DELETE FROM articles WHERE id = ?')

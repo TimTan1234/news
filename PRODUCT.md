@@ -20,7 +20,7 @@ Pulse is a personal news tracker laid out like a social feed. It follows RSS and
 
 Four things together, none of which a conventional feed reader offers as a set:
 
-- **Social-feed format.** News is read the way a social app is scrolled: a stories rail with one ring per source, a chronological post feed, double-tap to like, tap to read.
+- **Social-feed format.** News is read the way a social app is scrolled: a stories rail with one ring per source, a chronological post feed that shows a story once however many sources report it, double-tap to like, tap to read.
 - **Chinese and Western sources in one feed.** Bilibili, Weibo, Zhihu and Xiaohongshu sit beside RSS, YouTube, Hacker News, GitHub and general news search, with a fully bilingual interface.
 - **Suggestions that learn.** Interests come from tracked keywords, from likes, saves, reads and hides, and from connected Bilibili and YouTube accounts. A quarter of suggestion slots are held for subjects outside the reader's usual taste, and feedback moves a subject between trial, standing, resting and stopped.
 - **Private and self-hosted.** Data, logins and reading history stay on the owner's machine. Pulse only reads connected accounts; it never likes, follows or posts.
@@ -37,7 +37,7 @@ Four things together, none of which a conventional feed reader offers as a set:
 
 - Surfaces: Home (stories rail, topic filters, feed), Reader (extracted article text with link to original), Explore (suggestions, then feed search and outside search with Follow), Briefing, Activity (tracked keywords and every matching story), Profile (streak, weekly and per-topic counts, saved and liked), Settings (theme, language, interests, sources, topics, connected accounts, OPML, sign out), Auth.
 - Stack: React 19 + Vite + React Router + TanStack Query on the client, CSS modules with tokens in `src/styles/tokens.css`; Fastify + better-sqlite3 on the server; Vitest.
-- AI features degrade to rules without keys. `ANTHROPIC_API_KEY` enables summaries, the briefing, proposed interests and per-suggestion reasons, written in the interface language. `GEMINI_API_KEY` adds relevance scoring.
+- AI features degrade to rules without keys. `ANTHROPIC_API_KEY` enables summaries, the briefing, proposed interests and per-suggestion reasons, written in the interface language. `GEMINI_API_KEY` adds relevance scoring. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` let story grouping compare reports by meaning, across languages, instead of by matching titles.
 - Platform availability varies per instance: Weibo and Zhihu need cookies, YouTube needs an API key and an OAuth client, Xiaohongshu needs the admin to connect a dedicated account. The interface must read correctly when any of these are absent.
 - Xiaohongshu is one shared login for the whole instance, visible and manageable only by the admin; its notes open on the site, not in the Reader.
 - Every piece of interface copy exists in English and Simplified Chinese (`src/i18n/en.ts`, `src/i18n/zh.ts`).
