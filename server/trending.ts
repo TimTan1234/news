@@ -9,9 +9,12 @@ const STOPWORDS = new Set(
   why will with year years you your review reviews guide update updates report reports watch video best-of vs
   could would might been being were here's it's that's what's don't can't won't isn't finally actually really
   announces announced launches launched reveals revealed coming comes release released free price official
-  ai game games gaming tech app apps phone phones home ceo company companies model models pc console trailer
+  ai game games gaming tech app apps phone phones home ceo company companies model models pc tv console trailer
   launch world play players voice data tool tools feature features users people plan plans help work better
-  reportedly according agent agents deal sale codes code promo coupons off black friday`.split(/\s+/),
+  reportedly according agent agents deal sale codes code promo coupons off black friday
+  january february march april june july august september october november december
+  monday tuesday wednesday thursday saturday sunday weekend
+  two three four five six seven eight nine ten`.split(/\s+/),
 )
 
 export interface TitleRow {
@@ -77,16 +80,22 @@ interface Tally {
   sources: Set<number>
   articles: number
   forms: Map<string, number>
+  /** Some headline writes it in lower case. */
+  ordinary: boolean
 }
+
+/** Lower case in a headline marks an ordinary word; a name keeps its capital, and Chinese has no case. */
+const ordinary = (form: string) => form === form.toLowerCase() && form !== form.toUpperCase()
 
 function tally(rows: TitleRow[]): Map<string, Tally> {
   const counts = new Map<string, Tally>()
   for (const row of rows) {
     for (const [key, form] of phrases(row.title)) {
-      const entry = counts.get(key) ?? { sources: new Set(), articles: 0, forms: new Map() }
+      const entry = counts.get(key) ?? { sources: new Set(), articles: 0, forms: new Map(), ordinary: false }
       entry.sources.add(row.source_id)
       entry.articles++
       entry.forms.set(form, (entry.forms.get(form) ?? 0) + 1)
+      entry.ordinary ||= ordinary(form)
       counts.set(key, entry)
     }
   }
@@ -96,12 +105,14 @@ function tally(rows: TitleRow[]): Map<string, Tally> {
 /**
  * Phrases covered by at least two sources in `recent`, and at least twice as
  * frequent there as their daily average across `baseline` (spanning `baselineDays`).
+ * A single word has to be a name: one that any headline in either set writes in lower case is left out.
  */
 export function trending(recent: TitleRow[], baseline: TitleRow[], baselineDays: number, limit = 12): Trend[] {
   const before = tally(baseline)
   const candidates = [...tally(recent)]
     .filter(([key, entry]) => {
       if (entry.sources.size < 2) return false
+      if (!key.includes(' ') && (entry.ordinary || before.get(key)?.ordinary)) return false
       const usual = (before.get(key)?.articles ?? 0) / baselineDays
       return entry.articles >= usual * 2
     })
