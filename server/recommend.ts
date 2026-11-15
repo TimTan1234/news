@@ -568,7 +568,7 @@ export function recordOutcome(db: DB, userId: number, articleId: number, outcome
 export function listSuggestions(db: DB, userId: number, now = Date.now()) {
   const rows = db
     .prepare(
-      `SELECT g.provider, g.reason, g.lang, i.id AS interest_id, i.label AS interest_label, i.kind AS interest_kind, x.*
+      `SELECT g.provider, g.reason, g.lang, g.created_at AS suggested_at, i.id AS interest_id, i.label AS interest_label, i.kind AS interest_kind, x.*
        FROM suggestions g
        JOIN interests i ON i.id = g.interest_id
        JOIN (${ARTICLE_SELECT}) x ON x.id = g.article_id
@@ -579,6 +579,7 @@ export function listSuggestions(db: DB, userId: number, now = Date.now()) {
     provider: string
     reason: string | null
     lang: string | null
+    suggested_at: number
     interest_id: number
     interest_label: string
     interest_kind: InterestKind
@@ -588,6 +589,7 @@ export function listSuggestions(db: DB, userId: number, now = Date.now()) {
     provider: row.provider,
     reason: row.reason,
     lang: row.lang,
+    suggestedAt: row.suggested_at,
     interest: { id: row.interest_id, label: row.interest_label, kind: row.interest_kind },
   }))
 }

@@ -45,6 +45,8 @@ export interface Suggestion {
   /** Written by the model in `lang`; absent when the round ran without one. */
   reason: string | null
   lang: string | null
+  /** When its round ran; every suggestion from one round carries the same time. */
+  suggestedAt: number
   interest: { id: number; label: string; kind: 'near' | 'lateral' | 'wildcard' }
 }
 

@@ -295,15 +295,15 @@ describe('suggestions', () => {
     add.run(40, 'https://ign.example/a', 'Metroid Prime 4 sells out', now, now)
     add.run(41, 'https://ign.example/b', 'Metroid fan art roundup', now, now)
     suggest.run(40, 0.9, 'You liked the Prime 4 review.', now)
-    suggest.run(41, 0.5, null, now)
+    suggest.run(41, 0.5, null, now - 3_600_000)
   })
 
   it('lists the stories with their subject and reason, to their owner only', async () => {
     const mine = await get('/api/suggestions?lang=en')
     expect(mine).toMatchObject({ running: false, ranAt: now, problem: null })
     expect(mine.items).toMatchObject([
-      { article: { id: 40, source: { title: 'IGN', managed: false } }, provider: 'news', reason: 'You liked the Prime 4 review.', interest: { id: 5, label: 'Metroid', kind: 'lateral' } },
-      { article: { id: 41 }, reason: null },
+      { article: { id: 40, source: { title: 'IGN', managed: false } }, provider: 'news', reason: 'You liked the Prime 4 review.', suggestedAt: now, interest: { id: 5, label: 'Metroid', kind: 'lateral' } },
+      { article: { id: 41 }, reason: null, suggestedAt: now - 3_600_000 },
     ])
     expect((await get('/api/suggestions?lang=en', ben)).items).toEqual([])
   })
