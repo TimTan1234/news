@@ -178,6 +178,8 @@ export const zh: Messages = {
     saved: '已收藏',
     week: '本周阅读',
     byTopic: '近30天各主题阅读',
+    noReads: '还没有阅读记录。每打开一篇内容，都会计入连续阅读天数和本周阅读。',
+    toFeed: '去首页',
     dayStories: (day, count) => `${day}：${count}篇`,
     tabSaved: '收藏',
     tabLiked: '喜欢',

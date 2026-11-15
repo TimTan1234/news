@@ -6,6 +6,7 @@ import { useStats } from '../api/hooks.ts'
 import { TileGrid } from '../components/Feed.tsx'
 import { Empty, TopBar, cx, ui } from '../components/ui.tsx'
 import { useMessages } from '../i18n/index.ts'
+import { useSideScroll } from '../lib/dom.ts'
 import { weekday } from '../lib/format.ts'
 import p from './pages.module.css'
 
@@ -54,9 +55,16 @@ function TopicChart({ topics }: { topics: Stats['topics'] }) {
   )
 }
 
+/** Whether there is any reading to chart: a streak, a read in the last seven days, or a topic read in the last 30. */
+function hasRead(stats: Stats): boolean {
+  return stats.streak > 0 || stats.topics.length > 0 || stats.week.some((entry) => entry.count > 0)
+}
+
 export function Profile() {
   const { data: stats } = useStats()
   const [tab, setTab] = useState<'saved' | 'liked'>('saved')
+  const [charts, setCharts] = useState<HTMLDivElement | null>(null)
+  useSideScroll(charts)
   const t = useMessages()
 
   return (
@@ -67,7 +75,15 @@ export function Profile() {
         </Link>
       </TopBar>
 
-      {stats && (
+      {stats && !hasRead(stats) && (
+        <div className={p.firstRead}>
+          <p>{t.profile.noReads}</p>
+          <Link to="/" className={ui.button}>
+            {t.profile.toFeed}
+          </Link>
+        </div>
+      )}
+      {stats && hasRead(stats) && (
         <>
           <dl className={p.tiles}>
             {[
@@ -81,10 +97,16 @@ export function Profile() {
               </div>
             ))}
           </dl>
-          <div className={p.charts}>
-            <WeekChart week={stats.week} />
-            {stats.topics.length > 0 && <TopicChart topics={stats.topics} />}
-          </div>
+          {stats.topics.length > 0 ? (
+            <div className={cx(p.charts, p.chartPair)} ref={setCharts}>
+              <WeekChart week={stats.week} />
+              <TopicChart topics={stats.topics} />
+            </div>
+          ) : (
+            <div className={p.charts}>
+              <WeekChart week={stats.week} />
+            </div>
+          )}
         </>
       )}
 

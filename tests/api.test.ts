@@ -163,6 +163,19 @@ describe('feed', () => {
     expect((await get('/api/feed?filter=saved')).items.map((item: { id: number }) => item.id)).toEqual([2])
   })
 
+  it('lists saved and liked stories by when they were saved or liked, newest first, across pages', async () => {
+    // Article 1 was published after article 4, but article 4 was saved and liked later.
+    db.exec('UPDATE articles SET saved_at = 100, liked_at = 100 WHERE id = 1')
+    db.exec('UPDATE articles SET saved_at = 200, liked_at = 200 WHERE id = 4')
+    const ids = (page: { items: { id: number }[] }) => page.items.map((item) => item.id)
+    for (const filter of ['saved', 'liked']) {
+      expect(ids(await get(`/api/feed?filter=${filter}`))).toEqual([4, 1])
+      const first = await get(`/api/feed?filter=${filter}&limit=1`)
+      expect(ids(first)).toEqual([4])
+      expect(ids(await get(`/api/feed?filter=${filter}&limit=1&cursor=${first.nextCursor}`))).toEqual([1])
+    }
+  })
+
   it('shows a story once in the home feed, under its first report, with the other sources beside it', async () => {
     db.exec('INSERT INTO story_articles (article_id, story_id) VALUES (2, 8), (3, 8), (8, 8)')
     const ids = (page: { items: { id: number }[] }) => page.items.map((item) => item.id)

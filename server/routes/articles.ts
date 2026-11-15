@@ -91,14 +91,16 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
       where.push(first.sql)
       params.push(...first.params)
     }
+    // Saved and liked lists put the latest save or like first; everything else follows publication time.
+    const order = filter === 'saved' ? 'saved_at' : filter === 'liked' ? 'liked_at' : 'published_at'
     if (cursor) {
-      const [publishedAt, id] = cursor.split('_').map(Number)
-      where.push('(a.published_at, a.id) < (?, ?)')
-      params.push(publishedAt, id)
+      const [at, id] = cursor.split('_').map(Number)
+      where.push(`(a.${order}, a.id) < (?, ?)`)
+      params.push(at, id)
     }
 
     const rows = db
-      .prepare(`${ARTICLE_SELECT} WHERE ${where.join(' AND ')} ORDER BY a.published_at DESC, a.id DESC LIMIT ?`)
+      .prepare(`${ARTICLE_SELECT} WHERE ${where.join(' AND ')} ORDER BY a.${order} DESC, a.id DESC LIMIT ?`)
       .all(...params, limit + 1) as ArticleRow[]
     const page = rows.slice(0, limit)
     const last = page.at(-1)
@@ -110,7 +112,7 @@ export function articleRoutes(app: FastifyInstance, db: DB): void {
     const also = byStory ? alsoReporting(db, page.map((row) => row.id)) : null
     return {
       items: page.map((row) => (also ? { ...toArticle(row), also: also.get(row.id) ?? [] } : toArticle(row))),
-      nextCursor: rows.length > limit && last ? `${last.published_at}_${last.id}` : null,
+      nextCursor: rows.length > limit && last ? `${last[order]}_${last.id}` : null,
       seenMark,
     }
   })

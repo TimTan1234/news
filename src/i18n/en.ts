@@ -178,6 +178,8 @@ export const en = {
     saved: 'saved',
     week: 'Stories read this week',
     byTopic: 'By topic, last 30 days',
+    noReads: 'Nothing read yet. Each story you open counts toward your streak and your week.',
+    toFeed: 'Go to Home',
     dayStories: (day: string, count: number) => `${day}: ${plural(count, 'story', 'stories')}`,
     tabSaved: 'Saved',
     tabLiked: 'Liked',
